@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Run every lint/typecheck gate exactly as CI does.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+echo "==> ruff (lint + format check)"
+uv run ruff check .
+uv run ruff format --check .
+
+echo "==> mypy --strict (shared packages)"
+uv run mypy shared/atlas_core shared/atlas_events shared/atlas_observability shared/atlas_ai \
+  --strict --ignore-missing-imports
+
+echo "==> import-linter (module boundary contracts)"
+uv run lint-imports
+
+echo "==> bandit (Python AST security)"
+uv run bandit -r shared/ apps/ services/ -c .bandit.yml -q
+
+echo "==> TypeScript lint via turbo"
+pnpm lint
+
+echo "==> TypeScript typecheck via turbo"
+pnpm typecheck
+
+echo "==> All lint gates passed"

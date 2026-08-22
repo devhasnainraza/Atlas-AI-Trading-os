@@ -1,0 +1,19 @@
+{
+  "name": "@atlas/api-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "generate": "openapi-typescript openapi.json -o src/schema.d.ts",
+    "lint": "echo '@atlas/api-client: nothing to lint'",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@atlas/config": "workspace:*",
+    "openapi-typescript": "^7.4.0",
+    "typescript": "^5.7.0"
+  }
+}

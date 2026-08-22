@@ -1,0 +1,470 @@
+openapi: 3.1.0
+info:
+  title: Atlas Platform Foundation API
+  version: 1.0.0
+  description: >
+    Foundation-level endpoints only (Spec 00): health, platform admin (DLQ, replay,
+    scheduled jobs, background tasks, audit), feature-flag evaluation passthrough, and AI
+    platform registries (definitions only). Every future module mounts under /v1 with the
+    same conventions. All error responses use the standard error envelope. All endpoints
+    except /v1/health/* require authentication (enforced from Spec 00; Dev identity before).
+servers:
+  - url: /v1
+tags:
+  - {name: health}
+  - {name: platform-admin}
+  - {name: feature-flags}
+  - {name: ai-registry}
+  - {name: sample}
+
+paths:
+  /health/live:
+    get:
+      tags: [health]
+      operationId: getLiveness
+      security: []
+      summary: Process liveness
+      responses:
+        "200":
+          description: Alive
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Liveness"}
+
+  /health/ready:
+    get:
+      tags: [health]
+      operationId: getReadiness
+      security: []
+      summary: Readiness including dependency status
+      responses:
+        "200":
+          description: Ready
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Readiness"}
+        "503":
+          description: Not ready (same body, status=degraded|down)
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Readiness"}
+
+  /platform/dead-letter-events:
+    get:
+      tags: [platform-admin]
+      operationId: listDeadLetterEvents
+      summary: List dead-lettered events
+      parameters:
+        - {name: event_type, in: query, schema: {type: string}}
+        - {name: consumer, in: query, schema: {type: string}}
+        - {name: status, in: query, schema: {type: string, enum: [dead, redriven, discarded]}}
+        - {$ref: "#/components/parameters/Page"}
+        - {$ref: "#/components/parameters/PageSize"}
+      responses:
+        "200":
+          description: Page of DLQ entries
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeadLetterEventPage"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /platform/dead-letter-events/{id}/redrive:
+    post:
+      tags: [platform-admin]
+      operationId: redriveDeadLetterEvent
+      summary: Re-drive one dead-lettered event to its consumer (audited)
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        "202":
+          description: Re-drive accepted
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeadLetterEvent"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /platform/event-replays:
+    post:
+      tags: [platform-admin]
+      operationId: startEventReplay
+      summary: Replay events by type/time-range to designated subscribers (audited)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ReplayRequest"}
+      responses:
+        "202":
+          description: Replay started
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ReplayStatus"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /platform/scheduled-jobs:
+    get:
+      tags: [platform-admin]
+      operationId: listScheduledJobs
+      summary: List scheduled jobs with last/next run
+      responses:
+        "200":
+          description: Jobs
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/ScheduledJob"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /platform/background-tasks:
+    get:
+      tags: [platform-admin]
+      operationId: listBackgroundTasks
+      summary: List background tasks by status
+      parameters:
+        - {name: status, in: query, schema: {type: string, enum: [queued, running, succeeded, failed]}}
+        - {$ref: "#/components/parameters/Page"}
+        - {$ref: "#/components/parameters/PageSize"}
+      responses:
+        "200":
+          description: Page of tasks
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BackgroundTaskPage"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /platform/audit-log:
+    get:
+      tags: [platform-admin]
+      operationId: listAuditLog
+      summary: Query append-only audit log
+      parameters:
+        - {name: actor, in: query, schema: {type: string}}
+        - {name: action, in: query, schema: {type: string}}
+        - {name: from, in: query, schema: {type: string, format: date-time}}
+        - {name: to, in: query, schema: {type: string, format: date-time}}
+        - {$ref: "#/components/parameters/Page"}
+        - {$ref: "#/components/parameters/PageSize"}
+      responses:
+        "200":
+          description: Page of audit entries
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AuditLogPage"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /feature-flags/{flag_key}/evaluation:
+    get:
+      tags: [feature-flags]
+      operationId: evaluateFeatureFlag
+      summary: Evaluate a flag for the calling context (server-authoritative)
+      parameters: [{name: flag_key, in: path, required: true, schema: {type: string}}]
+      responses:
+        "200":
+          description: Evaluation result (falls back to flag default when provider down)
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/FlagEvaluation"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /ai/agents:
+    get:
+      tags: [ai-registry]
+      operationId: listAgentDefinitions
+      summary: List registered agent definitions
+      responses:
+        "200":
+          description: Definitions
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/AgentDefinition"}
+        default: {$ref: "#/components/responses/Error"}
+    post:
+      tags: [ai-registry]
+      operationId: registerAgentDefinition
+      summary: Register an agent definition (no execution in Spec 00)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/AgentDefinitionCreate"}
+      responses:
+        "201":
+          description: Registered
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AgentDefinition"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /ai/tools:
+    get:
+      tags: [ai-registry]
+      operationId: listToolDefinitions
+      summary: List registered tool definitions
+      responses:
+        "200":
+          description: Definitions
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/ToolDefinition"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /ai/prompts/{name}:
+    get:
+      tags: [ai-registry]
+      operationId: getPromptDefinition
+      summary: Get a prompt by name and version (or latest stable)
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}}
+        - {name: version, in: query, schema: {type: string}, description: "semver or 'latest-stable' (default)"}
+      responses:
+        "200":
+          description: Prompt
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PromptDefinition"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /sample/echo:
+    post:
+      tags: [sample]
+      operationId: sampleEcho
+      summary: Throwaway proof endpoint exercising validation, events, and error envelope
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/EchoRequest"}
+      responses:
+        "200":
+          description: Echo with correlation id; publishes atlas.sample.echo.requested
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/EchoResponse"}
+        default: {$ref: "#/components/responses/Error"}
+
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+  parameters:
+    Page: {name: page, in: query, schema: {type: integer, minimum: 1, default: 1}}
+    PageSize: {name: page_size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 25}}
+  responses:
+    Error:
+      description: Standard error envelope (any 4xx/5xx)
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+  schemas:
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, correlation_id]
+          properties:
+            code: {type: string, description: "Stable machine code, e.g. ATLAS-VAL-001"}
+            message: {type: string, description: "User-safe message; never internals"}
+            correlation_id: {type: string, format: uuid}
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field: {type: string}
+                  issue: {type: string}
+    Liveness:
+      type: object
+      required: [status]
+      properties:
+        status: {type: string, enum: [alive]}
+    Readiness:
+      type: object
+      required: [status, dependencies]
+      properties:
+        status: {type: string, enum: [ready, degraded, down]}
+        dependencies:
+          type: array
+          items:
+            type: object
+            required: [name, status]
+            properties:
+              name: {type: string, examples: [postgres, redis, kafka]}
+              status: {type: string, enum: [up, down]}
+              latency_ms: {type: number}
+    EventEnvelope:
+      type: object
+      required: [event_id, event_type, schema_version, occurred_at, correlation_id, producer, payload]
+      properties:
+        event_id: {type: string, format: uuid}
+        event_type: {type: string, examples: ["atlas.sample.echo.requested"]}
+        schema_version: {type: string, examples: ["1.0.0"]}
+        occurred_at: {type: string, format: date-time}
+        correlation_id: {type: string, format: uuid}
+        causation_id: {type: string, format: uuid}
+        producer: {type: string}
+        replay_of: {type: string, format: uuid, description: "Set when event is a replay"}
+        payload: {type: object}
+    DeadLetterEvent:
+      type: object
+      required: [id, event_id, event_type, consumer, failure_reason, status]
+      properties:
+        id: {type: string, format: uuid}
+        event_id: {type: string, format: uuid}
+        event_type: {type: string}
+        consumer: {type: string}
+        failure_reason: {type: string}
+        status: {type: string, enum: [dead, redriven, discarded]}
+        attempts:
+          type: array
+          items:
+            type: object
+            properties:
+              at: {type: string, format: date-time}
+              error: {type: string}
+        envelope: {$ref: "#/components/schemas/EventEnvelope"}
+    DeadLetterEventPage:
+      type: object
+      required: [items, page, page_size, total]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/DeadLetterEvent"}
+        page: {type: integer}
+        page_size: {type: integer}
+        total: {type: integer}
+    ReplayRequest:
+      type: object
+      required: [event_type, from]
+      properties:
+        event_type: {type: string}
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        subscribers:
+          type: array
+          items: {type: string}
+          description: Designated subscribers; empty = all replay-capable
+    ReplayStatus:
+      type: object
+      required: [replay_id, status]
+      properties:
+        replay_id: {type: string, format: uuid}
+        status: {type: string, enum: [started, running, completed, failed]}
+        events_replayed: {type: integer}
+    ScheduledJob:
+      type: object
+      required: [name, schedule, enabled, missed_run_policy]
+      properties:
+        name: {type: string}
+        schedule: {type: string, description: cron}
+        enabled: {type: boolean}
+        missed_run_policy: {type: string, enum: [catch_up_once, skip]}
+        last_run_at: {type: string, format: date-time}
+        last_status: {type: string, enum: [succeeded, failed]}
+        next_run_at: {type: string, format: date-time}
+    BackgroundTask:
+      type: object
+      required: [id, task_type, status, attempts, correlation_id]
+      properties:
+        id: {type: string, format: uuid}
+        task_type: {type: string}
+        status: {type: string, enum: [queued, running, succeeded, failed]}
+        attempts: {type: integer}
+        correlation_id: {type: string, format: uuid}
+        error: {type: string}
+        queued_at: {type: string, format: date-time}
+        finished_at: {type: string, format: date-time}
+    BackgroundTaskPage:
+      type: object
+      required: [items, page, page_size, total]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/BackgroundTask"}
+        page: {type: integer}
+        page_size: {type: integer}
+        total: {type: integer}
+    AuditLogEntry:
+      type: object
+      required: [id, actor, action, target, correlation_id, occurred_at]
+      properties:
+        id: {type: string, format: uuid}
+        actor: {type: string}
+        action: {type: string, examples: [dlq.redrive, flag.change, replay.start]}
+        target: {type: string}
+        correlation_id: {type: string, format: uuid}
+        metadata: {type: object}
+        occurred_at: {type: string, format: date-time}
+    AuditLogPage:
+      type: object
+      required: [items, page, page_size, total]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/AuditLogEntry"}
+        page: {type: integer}
+        page_size: {type: integer}
+        total: {type: integer}
+    FlagEvaluation:
+      type: object
+      required: [flag_key, value, reason]
+      properties:
+        flag_key: {type: string}
+        value: {}
+        variant: {type: string}
+        reason: {type: string, enum: [TARGETING_MATCH, DEFAULT, DISABLED, ERROR_FALLBACK]}
+    AgentDefinitionCreate:
+      type: object
+      required: [name, version, capabilities]
+      properties:
+        name: {type: string}
+        version: {type: string}
+        capabilities: {type: array, items: {type: string}}
+        allowed_tools: {type: array, items: {type: string}}
+        config_schema: {type: object}
+    AgentDefinition:
+      allOf:
+        - {$ref: "#/components/schemas/AgentDefinitionCreate"}
+        - type: object
+          required: [id, status]
+          properties:
+            id: {type: string, format: uuid}
+            status: {type: string, enum: [registered, active, suspended]}
+    ToolDefinition:
+      type: object
+      required: [name, version, input_schema, output_schema, required_permissions]
+      properties:
+        name: {type: string}
+        version: {type: string}
+        input_schema: {type: object}
+        output_schema: {type: object}
+        required_permissions: {type: array, items: {type: string}}
+        rate_class: {type: string}
+    PromptDefinition:
+      type: object
+      required: [name, version, body, status]
+      properties:
+        name: {type: string}
+        version: {type: string}
+        body: {type: string}
+        status: {type: string, enum: [draft, stable, deprecated]}
+        metadata: {type: object}
+    EchoRequest:
+      type: object
+      required: [message]
+      additionalProperties: false
+      properties:
+        message: {type: string, minLength: 1, maxLength: 500}
+    EchoResponse:
+      type: object
+      required: [message, correlation_id]
+      properties:
+        message: {type: string}
+        correlation_id: {type: string, format: uuid}
+
+security:
+  - bearerAuth: []

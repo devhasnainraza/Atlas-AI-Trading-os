@@ -1,0 +1,67 @@
+# Application services with hot reload — layer on top of compose.yaml:
+#   docker compose -f infra/docker/compose.yaml -f infra/docker/compose.dev.yaml up
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.api
+      target: dev
+    environment:
+      ATLAS_ENV: local
+      ATLAS_SERVICE_NAME: atlas-api
+      ATLAS_DATABASE_URL: postgresql+asyncpg://atlas:atlas_local_dev@postgres:5432/atlas
+      ATLAS_REDIS_URL: redis://redis:6379/0
+      ATLAS_KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../../apps/api/src:/app/apps/api/src
+      - ../../shared:/app/shared
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      redpanda: {condition: service_healthy}
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.worker
+    environment:
+      ATLAS_ENV: local
+      ATLAS_SERVICE_NAME: atlas-worker
+      ATLAS_REDIS_URL: redis://redis:6379/1
+      ATLAS_KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+    volumes:
+      - ../../services/worker/src:/app/services/worker/src
+      - ../../shared:/app/shared
+    depends_on:
+      redis: {condition: service_healthy}
+      redpanda: {condition: service_healthy}
+
+  scheduler:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.scheduler
+    environment:
+      ATLAS_ENV: local
+      ATLAS_SERVICE_NAME: atlas-scheduler
+      ATLAS_REDIS_URL: redis://redis:6379/1
+    volumes:
+      - ../../services/scheduler/src:/app/services/scheduler/src
+      - ../../shared:/app/shared
+    depends_on:
+      redis: {condition: service_healthy}
+
+  web:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.web
+      target: dev
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../../apps/web/src:/app/apps/web/src
+    depends_on:
+      - api

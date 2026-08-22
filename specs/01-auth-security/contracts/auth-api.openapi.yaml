@@ -1,0 +1,702 @@
+openapi: 3.1.0
+info:
+  title: Atlas Auth, Security & User Platform API
+  version: 1.0.0
+  description: >
+    Spec 01 surface. All routes under /v1. Standard Spec 00 error envelope on every 4xx/5xx.
+    Browser clients authenticate via __Host- cookies (+ X-CSRF-Token on mutations); API
+    clients via Authorization bearer (JWT or atlas_ API key). Rate-limit classes: auth
+    (strict), sensitive (step-up MFA required), default. Enumeration-resistant responses on
+    register/forgot/magic-link (always 202-style success shape).
+servers:
+  - url: /v1
+tags:
+  - {name: auth}
+  - {name: mfa}
+  - {name: profile}
+  - {name: sessions}
+  - {name: credentials}
+  - {name: connected-accounts}
+  - {name: security}
+  - {name: api-keys}
+  - {name: privacy}
+  - {name: admin}
+
+paths:
+  # ── Authentication ────────────────────────────────────────────────
+  /auth/register:
+    post:
+      tags: [auth]
+      operationId: register
+      security: []
+      summary: Create account (pending verification); enumeration-safe response
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/RegisterRequest"}}}}
+      responses:
+        "202": {description: "Accepted (verification email sent if address usable)", content: {application/json: {schema: {$ref: "#/components/schemas/AcceptedResponse"}}}}
+        default: {$ref: "#/components/responses/Error"}
+  /auth/verify-email:
+    post:
+      tags: [auth]
+      operationId: verifyEmail
+      security: []
+      summary: Consume email verification token
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [token], properties: {token: {type: string}}}}}}
+      responses:
+        "200": {description: Account activated, content: {application/json: {schema: {$ref: "#/components/schemas/SessionResponse"}}}}
+        default: {$ref: "#/components/responses/Error"}
+  /auth/verify-email/resend:
+    post:
+      tags: [auth]
+      operationId: resendVerification
+      summary: Re-issue verification email (cooldown-limited)
+      responses:
+        "202": {description: Accepted, content: {application/json: {schema: {$ref: "#/components/schemas/AcceptedResponse"}}}}
+        default: {$ref: "#/components/responses/Error"}
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      security: []
+      summary: Email+password sign-in; may require MFA step
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/LoginRequest"}}}}
+      responses:
+        "200": {description: Session established, content: {application/json: {schema: {$ref: "#/components/schemas/SessionResponse"}}}}
+        "401": {description: "ATLAS-AUTH-001 invalid credentials (uniform)", content: {application/json: {schema: {$ref: "#/components/schemas/ErrorEnvelope"}}}}
+        "403": {description: "ATLAS-AUTH-003 MFA required (mfa_token issued)", content: {application/json: {schema: {$ref: "#/components/schemas/MfaChallengeResponse"}}}}
+        default: {$ref: "#/components/responses/Error"}
+  /auth/login/mfa:
+    post:
+      tags: [auth]
+      operationId: loginMfa
+      security: []
+      summary: Complete sign-in with TOTP or recovery code
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/MfaVerifyRequest"}}}}
+      responses:
+        "200": {description: Session established, content: {application/json: {schema: {$ref: "#/components/schemas/SessionResponse"}}}}
+        default: {$ref: "#/components/responses/Error"}
+  /auth/refresh:
+    post:
+      tags: [auth]
+      operationId: refreshSession
+      security: []
+      summary: Rotate refresh token, mint new access JWT (reuse ⇒ family revocation)
+      responses:
+        "200": {description: Rotated, content: {application/json: {schema: {$ref: "#/components/schemas/SessionResponse"}}}}
+        default: {$ref: "#/components/responses/Error"}
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: Revoke current session
+      responses: {"204": {description: Logged out}, default: {$ref: "#/components/responses/Error"}}
+  /auth/logout-all:
+    post:
+      tags: [auth]
+      operationId: logoutAll
+      summary: Revoke all sessions for the user
+      responses: {"204": {description: All sessions revoked}, default: {$ref: "#/components/responses/Error"}}
+  /auth/magic-link:
+    post:
+      tags: [auth]
+      operationId: requestMagicLink
+      security: []
+      summary: Request sign-in link (enumeration-safe)
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [email], properties: {email: {type: string, format: email}}}}}}
+      responses:
+        "202": {description: Accepted, content: {application/json: {schema: {$ref: "#/components/schemas/AcceptedResponse"}}}}
+        default: {$ref: "#/components/responses/Error"}
+  /auth/magic-link/consume:
+    post:
+      tags: [auth]
+      operationId: consumeMagicLink
+      security: []
+      summary: Exchange magic-link token for a session (may require MFA step)
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [token], properties: {token: {type: string}}}}}}
+      responses:
+        "200": {description: Session established, content: {application/json: {schema: {$ref: "#/components/schemas/SessionResponse"}}}}
+        default: {$ref: "#/components/responses/Error"}
+  /auth/oauth/{provider}/start:
+    get:
+      tags: [auth]
+      operationId: oauthStart
+      security: []
+      summary: Begin OAuth flow (redirect w/ state+nonce+PKCE)
+      parameters: [{name: provider, in: path, required: true, schema: {type: string, enum: [google, github, apple]}}]
+      responses: {"302": {description: Redirect to provider}, default: {$ref: "#/components/responses/Error"}}
+  /auth/oauth/{provider}/callback:
+    get:
+      tags: [auth]
+      operationId: oauthCallback
+      security: []
+      summary: Provider callback → session, or link-confirmation challenge for existing email
+      parameters: [{name: provider, in: path, required: true, schema: {type: string, enum: [google, github, apple]}}]
+      responses:
+        "302": {description: Redirect to app with session cookies (or link-confirm page)}
+        default: {$ref: "#/components/responses/Error"}
+  /auth/password/forgot:
+    post:
+      tags: [auth]
+      operationId: forgotPassword
+      security: []
+      summary: Request reset token (enumeration-safe)
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [email], properties: {email: {type: string, format: email}}}}}}
+      responses:
+        "202": {description: Accepted, content: {application/json: {schema: {$ref: "#/components/schemas/AcceptedResponse"}}}}
+        default: {$ref: "#/components/responses/Error"}
+  /auth/password/reset:
+    post:
+      tags: [auth]
+      operationId: resetPassword
+      security: []
+      summary: Consume reset token, set new password, revoke sessions
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [token, new_password], properties: {token: {type: string}, new_password: {type: string, minLength: 12, maxLength: 128}}}}}}
+      responses: {"204": {description: Password reset}, default: {$ref: "#/components/responses/Error"}}
+  /auth/password/change:
+    post:
+      tags: [auth]
+      operationId: changePassword
+      summary: Change password (current password + step-up if MFA enabled)
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [current_password, new_password], properties: {current_password: {type: string}, new_password: {type: string, minLength: 12, maxLength: 128}}}}}}
+      responses: {"204": {description: Changed}, default: {$ref: "#/components/responses/Error"}}
+
+  # ── MFA ───────────────────────────────────────────────────────────
+  /mfa/totp:
+    post:
+      tags: [mfa]
+      operationId: enrollTotp
+      summary: Begin TOTP enrollment (returns provisioning URI/QR payload once)
+      responses:
+        "200": {description: Provisioning payload, content: {application/json: {schema: {type: object, required: [otpauth_uri], properties: {otpauth_uri: {type: string}, factor_id: {type: string, format: uuid}}}}}}
+        default: {$ref: "#/components/responses/Error"}
+    delete:
+      tags: [mfa]
+      operationId: disableTotp
+      summary: Disable TOTP (password + current code or recovery code required)
+      responses: {"204": {description: Disabled}, default: {$ref: "#/components/responses/Error"}}
+  /mfa/totp/activate:
+    post:
+      tags: [mfa]
+      operationId: activateTotp
+      summary: Confirm first code; activates factor and returns recovery codes (once)
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [code], properties: {code: {type: string, pattern: "^[0-9]{6}$"}}}}}}
+      responses:
+        "200": {description: Active + recovery codes, content: {application/json: {schema: {type: object, required: [recovery_codes], properties: {recovery_codes: {type: array, items: {type: string}, minItems: 10, maxItems: 10}}}}}}
+        default: {$ref: "#/components/responses/Error"}
+  /mfa/recovery-codes:
+    post:
+      tags: [mfa]
+      operationId: regenerateRecoveryCodes
+      summary: Regenerate batch (invalidates previous); step-up required
+      responses:
+        "200": {description: New codes (shown once), content: {application/json: {schema: {type: object, required: [recovery_codes], properties: {recovery_codes: {type: array, items: {type: string}}}}}}}
+        default: {$ref: "#/components/responses/Error"}
+  /mfa/step-up:
+    post:
+      tags: [mfa]
+      operationId: stepUpVerify
+      summary: Refresh mfa claim (≤5 min) for sensitive operations
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/MfaVerifyRequest"}}}}
+      responses: {"204": {description: Step-up granted}, default: {$ref: "#/components/responses/Error"}}
+
+  # ── Profile & consents ────────────────────────────────────────────
+  /users/me:
+    get:
+      tags: [profile]
+      operationId: getMe
+      summary: Current user + profile + security summary flags
+      responses:
+        "200": {description: Me, content: {application/json: {schema: {$ref: "#/components/schemas/Me"}}}}
+        default: {$ref: "#/components/responses/Error"}
+    patch:
+      tags: [profile]
+      operationId: updateProfile
+      summary: Update profile fields
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/ProfileUpdate"}}}}
+      responses:
+        "200": {description: Updated, content: {application/json: {schema: {$ref: "#/components/schemas/Me"}}}}
+        default: {$ref: "#/components/responses/Error"}
+  /users/me/preferences:
+    get:
+      tags: [profile]
+      operationId: getPreferences
+      responses:
+        "200": {description: Preferences map, content: {application/json: {schema: {type: object, additionalProperties: true}}}}
+        default: {$ref: "#/components/responses/Error"}
+    put:
+      tags: [profile]
+      operationId: putPreferences
+      summary: Upsert preference keys (validated per registered key schema)
+      requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: true}}}}
+      responses: {"204": {description: Saved}, default: {$ref: "#/components/responses/Error"}}
+  /users/me/consents:
+    get:
+      tags: [profile]
+      operationId: getConsents
+      responses:
+        "200": {description: Current consent states, content: {application/json: {schema: {type: array, items: {$ref: "#/components/schemas/Consent"}}}}}
+        default: {$ref: "#/components/responses/Error"}
+    post:
+      tags: [profile]
+      operationId: recordConsent
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/Consent"}}}}
+      responses: {"204": {description: Recorded}, default: {$ref: "#/components/responses/Error"}}
+
+  # ── Sessions & devices ────────────────────────────────────────────
+  /sessions:
+    get:
+      tags: [sessions]
+      operationId: listSessions
+      summary: Active sessions with device/geo context; marks current
+      responses:
+        "200": {description: Sessions, content: {application/json: {schema: {type: array, items: {$ref: "#/components/schemas/Session"}}}}}
+        default: {$ref: "#/components/responses/Error"}
+  /sessions/{id}:
+    delete:
+      tags: [sessions]
+      operationId: revokeSession
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses: {"204": {description: Revoked}, default: {$ref: "#/components/responses/Error"}}
+  /devices:
+    get:
+      tags: [sessions]
+      operationId: listDevices
+      responses:
+        "200": {description: Devices, content: {application/json: {schema: {type: array, items: {$ref: "#/components/schemas/Device"}}}}}
+        default: {$ref: "#/components/responses/Error"}
+  /devices/{id}/trust:
+    put:
+      tags: [sessions]
+      operationId: setDeviceTrust
+      summary: Trust/untrust device (trust requires step-up)
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [trusted], properties: {trusted: {type: boolean}}}}}}
+      responses: {"204": {description: Updated}, default: {$ref: "#/components/responses/Error"}}
+
+  # ── Credential vault ──────────────────────────────────────────────
+  /credentials:
+    get:
+      tags: [credentials]
+      operationId: listCredentials
+      summary: Masked credential metadata only — plaintext is never returned by any endpoint
+      responses:
+        "200": {description: Credentials, content: {application/json: {schema: {type: array, items: {$ref: "#/components/schemas/Credential"}}}}}
+        default: {$ref: "#/components/responses/Error"}
+    post:
+      tags: [credentials]
+      operationId: createCredential
+      summary: Store secret (write-only; step-up required; returns masked record)
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/CredentialCreate"}}}}
+      responses:
+        "201": {description: Stored (masked), content: {application/json: {schema: {$ref: "#/components/schemas/Credential"}}}}
+        default: {$ref: "#/components/responses/Error"}
+  /credentials/{id}/rotate:
+    post:
+      tags: [credentials]
+      operationId: rotateCredential
+      summary: Provide new secret value; previous version retires (step-up required)
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [secret], properties: {secret: {$ref: "#/components/schemas/SecretPayload"}}}}}}
+      responses:
+        "200": {description: Rotated (masked), content: {application/json: {schema: {$ref: "#/components/schemas/Credential"}}}}
+        default: {$ref: "#/components/responses/Error"}
+  /credentials/{id}/revoke:
+    post:
+      tags: [credentials]
+      operationId: revokeCredential
+      summary: Immediately deny all further use (step-up required)
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses: {"204": {description: Revoked}, default: {$ref: "#/components/responses/Error"}}
+  /credentials/{id}:
+    delete:
+      tags: [credentials]
+      operationId: deleteCredential
+      summary: Crypto-shred and remove (step-up required)
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses: {"204": {description: Deleted}, default: {$ref: "#/components/responses/Error"}}
+  /credentials/{id}/validate:
+    post:
+      tags: [credentials]
+      operationId: validateCredential
+      summary: Server-side health probe against the provider; updates health status
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        "200": {description: Health result, content: {application/json: {schema: {type: object, required: [health], properties: {health: {type: string, enum: [healthy, degraded, failed]}, checked_at: {type: string, format: date-time}}}}}}
+        default: {$ref: "#/components/responses/Error"}
+
+  # ── Connected accounts ────────────────────────────────────────────
+  /connected-accounts:
+    get:
+      tags: [connected-accounts]
+      operationId: listConnectedAccounts
+      responses:
+        "200": {description: Accounts, content: {application/json: {schema: {type: array, items: {$ref: "#/components/schemas/ConnectedAccount"}}}}}
+        default: {$ref: "#/components/responses/Error"}
+  /connected-accounts/{id}:
+    get:
+      tags: [connected-accounts]
+      operationId: getConnectedAccount
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        "200": {description: Detail incl. status/permissions/last_sync/errors, content: {application/json: {schema: {$ref: "#/components/schemas/ConnectedAccount"}}}}
+        default: {$ref: "#/components/responses/Error"}
+    delete:
+      tags: [connected-accounts]
+      operationId: disconnectAccount
+      summary: Disconnect + revoke backing credential/link (step-up required)
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses: {"204": {description: Disconnected}, default: {$ref: "#/components/responses/Error"}}
+  /connected-accounts/{id}/reconnect:
+    post:
+      tags: [connected-accounts]
+      operationId: reconnectAccount
+      summary: Re-key or re-auth a degraded/expired connection
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody: {required: false, content: {application/json: {schema: {type: object, properties: {secret: {$ref: "#/components/schemas/SecretPayload"}}}}}}
+      responses:
+        "200": {description: Reconnected, content: {application/json: {schema: {$ref: "#/components/schemas/ConnectedAccount"}}}}
+        default: {$ref: "#/components/responses/Error"}
+
+  # ── Security center ───────────────────────────────────────────────
+  /security/overview:
+    get:
+      tags: [security]
+      operationId: getSecurityOverview
+      summary: Security center aggregate (score, sessions, devices, MFA, keys, alerts, recommendations)
+      responses:
+        "200": {description: Overview, content: {application/json: {schema: {$ref: "#/components/schemas/SecurityOverview"}}}}
+        default: {$ref: "#/components/responses/Error"}
+  /security/events:
+    get:
+      tags: [security]
+      operationId: listSecurityEvents
+      parameters:
+        - {name: severity, in: query, schema: {type: string, enum: [info, warning, critical]}}
+        - {name: page, in: query, schema: {type: integer, minimum: 1, default: 1}}
+        - {name: page_size, in: query, schema: {type: integer, maximum: 100, default: 25}}
+      responses:
+        "200": {description: Events page, content: {application/json: {schema: {type: object, properties: {items: {type: array, items: {$ref: "#/components/schemas/SecurityEvent"}}, total: {type: integer}}}}}}
+        default: {$ref: "#/components/responses/Error"}
+  /security/events/{id}/ack:
+    post:
+      tags: [security]
+      operationId: acknowledgeSecurityEvent
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses: {"204": {description: Acknowledged}, default: {$ref: "#/components/responses/Error"}}
+
+  # ── API keys ──────────────────────────────────────────────────────
+  /api-keys:
+    get:
+      tags: [api-keys]
+      operationId: listApiKeys
+      responses:
+        "200": {description: Keys (prefix + metadata only), content: {application/json: {schema: {type: array, items: {$ref: "#/components/schemas/ApiKey"}}}}}
+        default: {$ref: "#/components/responses/Error"}
+    post:
+      tags: [api-keys]
+      operationId: createApiKey
+      summary: Create scoped key — full value returned exactly once (step-up required)
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [name, scopes], properties: {name: {type: string}, scopes: {type: array, items: {type: string}}, expires_at: {type: string, format: date-time}}}}}}
+      responses:
+        "201": {description: Created (value shown once), content: {application/json: {schema: {allOf: [{$ref: "#/components/schemas/ApiKey"}, {type: object, required: [key], properties: {key: {type: string, description: "Full atlas_ key — displayed only in this response"}}}]}}}}
+        default: {$ref: "#/components/responses/Error"}
+  /api-keys/{id}:
+    delete:
+      tags: [api-keys]
+      operationId: revokeApiKey
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses: {"204": {description: Revoked}, default: {$ref: "#/components/responses/Error"}}
+
+  # ── Privacy ───────────────────────────────────────────────────────
+  /privacy/export:
+    post:
+      tags: [privacy]
+      operationId: requestExport
+      summary: Start async data export (step-up required)
+      responses:
+        "202": {description: Export queued, content: {application/json: {schema: {$ref: "#/components/schemas/PrivacyRequest"}}}}
+        default: {$ref: "#/components/responses/Error"}
+    get:
+      tags: [privacy]
+      operationId: getExportStatus
+      responses:
+        "200": {description: Latest export request + download link when ready, content: {application/json: {schema: {$ref: "#/components/schemas/PrivacyRequest"}}}}
+        default: {$ref: "#/components/responses/Error"}
+  /privacy/delete-account:
+    post:
+      tags: [privacy]
+      operationId: requestAccountDeletion
+      summary: Begin deletion (14-day cancelable grace; step-up required)
+      responses:
+        "202": {description: Deletion scheduled, content: {application/json: {schema: {$ref: "#/components/schemas/PrivacyRequest"}}}}
+        default: {$ref: "#/components/responses/Error"}
+    delete:
+      tags: [privacy]
+      operationId: cancelAccountDeletion
+      summary: Cancel pending deletion within grace window
+      responses: {"204": {description: Canceled}, default: {$ref: "#/components/responses/Error"}}
+
+  # ── Admin (permissions: admin:*) ──────────────────────────────────
+  /admin/users:
+    get:
+      tags: [admin]
+      operationId: adminSearchUsers
+      parameters:
+        - {name: q, in: query, schema: {type: string}}
+        - {name: status, in: query, schema: {type: string}}
+        - {name: page, in: query, schema: {type: integer, default: 1}}
+      responses:
+        "200": {description: "Users (masked: no secrets, no hashes)", content: {application/json: {schema: {type: object, properties: {items: {type: array, items: {$ref: "#/components/schemas/AdminUser"}}, total: {type: integer}}}}}}
+        default: {$ref: "#/components/responses/Error"}
+  /admin/users/{id}/roles:
+    put:
+      tags: [admin]
+      operationId: adminSetRoles
+      summary: Assign/revoke roles (audited; bumps roles_ver; step-up required)
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [roles], properties: {roles: {type: array, items: {type: string}}}}}}}
+      responses: {"204": {description: Updated}, default: {$ref: "#/components/responses/Error"}}
+  /admin/users/{id}/lock:
+    put:
+      tags: [admin]
+      operationId: adminSetLock
+      summary: Lock/unlock account (audited)
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [locked], properties: {locked: {type: boolean}, reason: {type: string}}}}}}
+      responses: {"204": {description: Updated}, default: {$ref: "#/components/responses/Error"}}
+
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: "JWT or atlas_ API key"}
+    cookieAuth: {type: apiKey, in: cookie, name: __Host-access}
+  responses:
+    Error:
+      description: Standard error envelope (Spec 00) with ATLAS-AUTH-*/ATLAS-CRED-* codes
+      content: {application/json: {schema: {$ref: "#/components/schemas/ErrorEnvelope"}}}
+  schemas:
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, correlation_id]
+          properties:
+            code: {type: string, examples: [ATLAS-AUTH-001]}
+            message: {type: string}
+            correlation_id: {type: string, format: uuid}
+            details: {type: array, items: {type: object}}
+    AcceptedResponse:
+      type: object
+      required: [status]
+      properties:
+        status: {type: string, enum: [accepted]}
+        message: {type: string, description: "Uniform, enumeration-safe wording"}
+    RegisterRequest:
+      type: object
+      required: [email, consents]
+      additionalProperties: false
+      properties:
+        email: {type: string, format: email}
+        password: {type: string, minLength: 12, maxLength: 128, description: "Omit for passwordless"}
+        consents:
+          type: array
+          minItems: 3
+          items: {$ref: "#/components/schemas/Consent"}
+          description: Must include terms, privacy, risk_disclaimer
+    LoginRequest:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email: {type: string, format: email}
+        password: {type: string}
+        device_label: {type: string}
+    MfaChallengeResponse:
+      type: object
+      required: [error, mfa_token]
+      properties:
+        error: {$ref: "#/components/schemas/ErrorEnvelope/properties/error"}
+        mfa_token: {type: string, description: "Short-lived (5 min) challenge continuation token"}
+    MfaVerifyRequest:
+      type: object
+      required: [code]
+      properties:
+        mfa_token: {type: string, description: "Required on /auth/login/mfa; omitted on step-up"}
+        code: {type: string, description: "6-digit TOTP or recovery code"}
+        remember_device: {type: boolean, default: false}
+    SessionResponse:
+      type: object
+      required: [user]
+      properties:
+        user: {$ref: "#/components/schemas/Me"}
+        access_token: {type: string, description: "Present for bearer clients only; browser gets cookies"}
+        expires_in: {type: integer, examples: [900]}
+    Me:
+      type: object
+      required: [id, email, status]
+      properties:
+        id: {type: string, format: uuid}
+        email: {type: string, format: email}
+        email_verified: {type: boolean}
+        status: {type: string, enum: [pending_verification, active, suspended, locked, deleting]}
+        mfa_enabled: {type: boolean}
+        roles: {type: array, items: {type: string}}
+        onboarding_state: {type: object}
+        profile: {$ref: "#/components/schemas/Profile"}
+    Profile:
+      type: object
+      properties:
+        display_name: {type: string}
+        username: {type: string}
+        country: {type: string}
+        languages: {type: array, items: {type: string}}
+        timezone: {type: string}
+        trading_experience: {type: string, enum: [novice, intermediate, advanced, professional]}
+        preferred_markets: {type: array, items: {type: string, enum: [forex, crypto, indices, commodities, stocks]}}
+        risk_preference: {type: string, enum: [conservative, balanced, aggressive]}
+        bio: {type: string, maxLength: 500}
+    ProfileUpdate:
+      allOf: [{$ref: "#/components/schemas/Profile"}]
+      description: Partial update; unknown fields rejected
+    Consent:
+      type: object
+      required: [document, document_version, granted]
+      properties:
+        document: {type: string, enum: [terms, privacy, risk_disclaimer, marketing]}
+        document_version: {type: string}
+        granted: {type: boolean}
+        occurred_at: {type: string, format: date-time, readOnly: true}
+    Session:
+      type: object
+      required: [id, status, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        current: {type: boolean}
+        device: {$ref: "#/components/schemas/Device"}
+        ip: {type: string}
+        geo: {type: object, properties: {city: {type: string}, country: {type: string}}}
+        created_at: {type: string, format: date-time}
+        last_used_at: {type: string, format: date-time}
+        status: {type: string, enum: [active]}
+    Device:
+      type: object
+      required: [id, label]
+      properties:
+        id: {type: string, format: uuid}
+        label: {type: string}
+        platform: {type: string}
+        trusted: {type: boolean}
+        trusted_until: {type: string, format: date-time}
+        first_seen_at: {type: string, format: date-time}
+        last_seen_at: {type: string, format: date-time}
+    SecretPayload:
+      type: object
+      description: Write-only secret material; never echoed back
+      properties:
+        api_key: {type: string}
+        api_secret: {type: string}
+        passphrase: {type: string}
+        oauth_token: {type: string}
+      minProperties: 1
+    CredentialCreate:
+      type: object
+      required: [kind, provider, label, secret]
+      additionalProperties: false
+      properties:
+        kind: {type: string, enum: [broker, exchange, ai_provider, webhook, notification]}
+        provider: {type: string, examples: [binance, oanda, anthropic, openai]}
+        label: {type: string, maxLength: 100}
+        allowed_purposes: {type: array, items: {type: string, enum: [read_only, trade, inference, notify]}, default: [read_only]}
+        expires_at: {type: string, format: date-time}
+        secret: {$ref: "#/components/schemas/SecretPayload"}
+    Credential:
+      type: object
+      required: [id, kind, provider, label, status, masked_hint]
+      properties:
+        id: {type: string, format: uuid}
+        kind: {type: string}
+        provider: {type: string}
+        label: {type: string}
+        masked_hint: {type: string, examples: ["••••7f3a"]}
+        allowed_purposes: {type: array, items: {type: string}}
+        status: {type: string, enum: [active, retiring, revoked, deleted]}
+        health: {type: string, enum: [unknown, healthy, degraded, failed]}
+        version: {type: integer}
+        last_used_at: {type: string, format: date-time}
+        last_validated_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+    ConnectedAccount:
+      type: object
+      required: [id, kind, display_name, status]
+      properties:
+        id: {type: string, format: uuid}
+        kind: {type: string, enum: [broker, exchange, social_login, notification_channel, ai_provider]}
+        display_name: {type: string}
+        status: {type: string, enum: [connected, degraded, expired, revoked, error]}
+        credential_id: {type: string, format: uuid}
+        scopes_snapshot: {type: array, items: {type: string}}
+        last_sync_at: {type: string, format: date-time}
+        last_error: {type: string, description: Sanitized}
+    SecurityEvent:
+      type: object
+      required: [id, type, severity, occurred_at, status]
+      properties:
+        id: {type: string, format: uuid}
+        type: {type: string, enum: [login_new_device, impossible_travel, token_reuse, lockout, stuffing_suspected, mfa_recovery_used, credential_anomaly, admin_burst]}
+        severity: {type: string, enum: [info, warning, critical]}
+        details: {type: object, description: Redacted context}
+        status: {type: string, enum: [open, acknowledged, resolved]}
+        occurred_at: {type: string, format: date-time}
+    SecurityOverview:
+      type: object
+      required: [score, mfa_enabled]
+      properties:
+        score: {type: integer, minimum: 0, maximum: 100}
+        score_version: {type: string}
+        mfa_enabled: {type: boolean}
+        recovery_codes_remaining: {type: integer}
+        password_health: {type: object, properties: {strength: {type: string}, age_days: {type: integer}, breached: {type: boolean}}}
+        recent_logins: {type: array, items: {type: object, properties: {at: {type: string, format: date-time}, method: {type: string}, geo: {type: object}, device_label: {type: string}}}}
+        active_sessions: {type: integer}
+        trusted_devices: {type: integer}
+        api_keys: {type: integer}
+        connected_brokers: {type: array, items: {$ref: "#/components/schemas/ConnectedAccount"}}
+        open_alerts: {type: array, items: {$ref: "#/components/schemas/SecurityEvent"}}
+        recommendations: {type: array, items: {type: object, properties: {id: {type: string}, title: {type: string}, priority: {type: string, enum: [low, medium, high]}}}}
+    ApiKey:
+      type: object
+      required: [id, name, key_prefix, status]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        key_prefix: {type: string, examples: [atlas_a1b2]}
+        scopes: {type: array, items: {type: string}}
+        status: {type: string, enum: [active, revoked, expired]}
+        expires_at: {type: string, format: date-time}
+        last_used_at: {type: string, format: date-time}
+    PrivacyRequest:
+      type: object
+      required: [id, type, status]
+      properties:
+        id: {type: string, format: uuid}
+        type: {type: string, enum: [export, deletion]}
+        status: {type: string, enum: [requested, processing, completed, canceled, failed]}
+        requested_at: {type: string, format: date-time}
+        completed_at: {type: string, format: date-time}
+        download_url: {type: string, description: "Presigned, 7-day TTL; exports only"}
+        cancelable_until: {type: string, format: date-time, description: Deletions only}
+    AdminUser:
+      type: object
+      required: [id, email, status]
+      properties:
+        id: {type: string, format: uuid}
+        email: {type: string}
+        status: {type: string}
+        roles: {type: array, items: {type: string}}
+        mfa_enabled: {type: boolean}
+        created_at: {type: string, format: date-time}
+        last_login_at: {type: string, format: date-time}
+
+security:
+  - bearerAuth: []
+  - cookieAuth: []

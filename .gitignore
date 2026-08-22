@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+
+# Node / TypeScript
+node_modules/
+.next/
+out/
+.turbo/
+coverage/
+*.tsbuildinfo
+
+# Environment & secrets — never commit real values
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local data & artifacts
+*.log
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.idea/
+.vscode/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+
+# Docker / local volumes
+volumes/
+
+# Generated exports
+2026-*.txt

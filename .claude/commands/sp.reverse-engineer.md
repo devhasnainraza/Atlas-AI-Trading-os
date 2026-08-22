@@ -1152,13 +1152,14 @@ from sqlalchemy import create_engine, pool
 engine = create_engine(
     DATABASE_URL,
     poolclass=pool.QueuePool,
-    pool_size=10,              # Max connections in pool
-    max_overflow=20,           # Additional connections beyond pool_size
-    pool_timeout=30,           # Seconds to wait for connection
-    pool_recycle=3600,         # Recycle connections after 1 hour
-    pool_pre_ping=True,        # Test connection before using
-    echo=False                 # Don't log SQL (production)
+    pool_size=10,  # Max connections in pool
+    max_overflow=20,  # Additional connections beyond pool_size
+    pool_timeout=30,  # Seconds to wait for connection
+    pool_recycle=3600,  # Recycle connections after 1 hour
+    pool_pre_ping=True,  # Test connection before using
+    echo=False,  # Don't log SQL (production)
 )
+
 
 # Context manager for connection lifecycle
 @contextmanager
@@ -1173,6 +1174,7 @@ def get_db_session():
         raise
     finally:
         session.close()
+
 
 # Usage pattern:
 with get_db_session() as session:
@@ -1213,39 +1215,42 @@ with get_db_session() as session:
 # Extracted from: [file: src/api/validators.py, lines 10-60]
 from pydantic import BaseModel, EmailStr, validator
 
+
 class CreateUserRequest(BaseModel):
     """Validation schema for user creation"""
-    email: EmailStr                    # Email format validation
+
+    email: EmailStr  # Email format validation
     username: str
     password: str
     age: int
 
-    @validator('username')
+    @validator("username")
     def username_alphanumeric(cls, v):
         """Username must be alphanumeric"""
         if not v.isalnum():
-            raise ValueError('Username must contain only letters and numbers')
+            raise ValueError("Username must contain only letters and numbers")
         if len(v) < 3 or len(v) > 20:
-            raise ValueError('Username must be 3-20 characters')
+            raise ValueError("Username must be 3-20 characters")
         return v
 
-    @validator('password')
+    @validator("password")
     def password_strength(cls, v):
         """Password must meet strength requirements"""
         if len(v) < 8:
-            raise ValueError('Password must be at least 8 characters')
+            raise ValueError("Password must be at least 8 characters")
         if not any(c.isupper() for c in v):
-            raise ValueError('Password must contain uppercase letter')
+            raise ValueError("Password must contain uppercase letter")
         if not any(c.isdigit() for c in v):
-            raise ValueError('Password must contain digit')
+            raise ValueError("Password must contain digit")
         return v
 
-    @validator('age')
+    @validator("age")
     def age_range(cls, v):
         """Age must be reasonable"""
         if v < 13 or v > 120:
-            raise ValueError('Age must be between 13 and 120')
+            raise ValueError("Age must be between 13 and 120")
         return v
+
 
 # Usage in API endpoint:
 @app.post("/users")

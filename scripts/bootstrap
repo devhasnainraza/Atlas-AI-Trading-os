@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Bootstrap the local development environment: toolchain sync + sanity checks.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+echo "==> Checking prerequisites"
+for tool in uv pnpm docker; do
+  command -v "$tool" >/dev/null || { echo "ERROR: $tool is required but not installed"; exit 1; }
+done
+
+echo "==> Syncing Python workspace (uv)"
+uv sync
+
+echo "==> Installing TypeScript workspace (pnpm)"
+pnpm install
+
+if [ ! -f .env ]; then
+  echo "==> Creating .env from infra/docker/.env.example (placeholders only)"
+  cp infra/docker/.env.example .env
+fi
+
+echo "==> Bootstrap complete. Next: docker compose -f infra/docker/compose.yaml up -d"

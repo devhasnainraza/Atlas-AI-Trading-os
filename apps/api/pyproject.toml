@@ -1,0 +1,33 @@
+[project]
+name = "atlas-api"
+version = "0.1.0"
+description = "Atlas unified API layer — modular FastAPI application"
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.14",
+    "argon2-cffi>=23.1",
+    "asyncpg>=0.30",
+    "atlas-shared",
+    "authlib>=1.4",
+    "cryptography>=44.0",
+    "fastapi>=0.115",
+    "geoip2>=4.8",
+    "httpx>=0.27",
+    "pyjwt[crypto]>=2.10",
+    "pyotp>=2.9",
+    "redis>=5.2",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "user-agents>=2.2",
+    "uvicorn[standard]>=0.32",
+    "zxcvbn>=4.4.28",
+]
+
+[tool.uv.sources]
+atlas-shared = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/atlas_api"]

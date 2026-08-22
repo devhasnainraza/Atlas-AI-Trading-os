@@ -1,0 +1,83 @@
+[project]
+name = "atlas-ai-trading-os"
+version = "0.1.0"
+description = "Atlas AI Trading OS monorepo root (uv workspace)"
+requires-python = ">=3.12"
+dependencies = [
+    "atlas-shared",
+    "atlas-api",
+    "atlas-worker",
+    "atlas-scheduler",
+]
+
+[tool.uv.workspace]
+members = ["shared", "apps/api", "services/worker", "services/scheduler"]
+
+[tool.uv.sources]
+atlas-shared = { workspace = true }
+atlas-api = { workspace = true }
+atlas-worker = { workspace = true }
+atlas-scheduler = { workspace = true }
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.27",
+    "ruff>=0.8",
+    "import-linter>=2.1",
+    "mypy>=1.13",
+    "bandit>=1.8",
+    "pip-audit>=2.7",
+    "freezegun>=1.5",
+    "fakeredis>=2.26",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests", "apps/api/tests", "services/worker/tests", "shared/tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.isort]
+# Workspace packages are first-party; without this they sort as third-party in some files
+# and first-party in others depending on what is installed.
+known-first-party = [
+    "atlas_api",
+    "atlas_core",
+    "atlas_events",
+    "atlas_observability",
+    "atlas_ai",
+    "atlas_worker",
+    "atlas_scheduler",
+]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection idiom is a call in the argument default; B008 does not
+# apply to these because FastAPI resolves them per-request, not once at import.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Header", "fastapi.Body"]
+
+# Module boundary contracts (Constitution X / plan §1.2) — enforced in CI via `lint-imports`.
+[tool.importlinter]
+root_packages = ["atlas_api", "atlas_core", "atlas_events", "atlas_observability", "atlas_ai"]
+
+[[tool.importlinter.contracts]]
+name = "Shared packages must not import the API app"
+type = "forbidden"
+source_modules = ["atlas_core", "atlas_events", "atlas_observability", "atlas_ai"]
+forbidden_modules = ["atlas_api"]
+
+[[tool.importlinter.contracts]]
+name = "Modules may not import each other's internals (public.py only)"
+type = "forbidden"
+source_modules = ["atlas_api.modules.sample"]
+forbidden_modules = ["atlas_api.modules.platform.service", "atlas_api.modules.platform.repository", "atlas_api.modules.platform.domain"]

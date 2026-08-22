@@ -1,0 +1,9 @@
+# Bandit configuration — Python AST security linter (Spec 00 T039)
+skips:
+  # B101 assert_used: asserts are valid in test code
+  - B101
+# Target only production source trees; tests run separately in CI.
+targets:
+  - shared
+  - apps
+  - services

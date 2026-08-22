@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Regenerate the typed API client (packages/api-client) from the running API's OpenAPI.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+API_URL="${API_URL:-http://localhost:8000}"
+OUT="packages/api-client/src/schema.d.ts"
+
+echo "==> Fetching OpenAPI from ${API_URL}/openapi.json"
+mkdir -p packages/api-client/src
+curl -fsS "${API_URL}/openapi.json" -o packages/api-client/openapi.json
+
+echo "==> Generating TypeScript types"
+pnpm --dir packages/api-client exec openapi-typescript openapi.json -o src/schema.d.ts
+
+echo "==> Client types written to ${OUT}"

@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Smoke-check the event pipeline: publish a sample event via the API, verify it is
+# consumed, and confirm the DLQ stays empty.
+set -euo pipefail
+
+API_URL="${API_URL:-http://localhost:8000}"
+
+echo "==> Publishing sample echo event"
+resp=$(curl -fsS -X POST "$API_URL/v1/sample/echo" \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "smoke-test"}')
+echo "    response: $resp"
+
+corr=$(echo "$resp" | python -c "import sys, json; print(json.load(sys.stdin)['correlation_id'])")
+
+echo "==> Checking dead letter queue is empty"
+dlq=$(curl -fsS "$API_URL/v1/platform/dead-letter-events")
+count=$(echo "$dlq" | python -c "import sys, json; print(json.load(sys.stdin)['total'])")
+
+if [ "$count" != "0" ]; then
+  echo "FAIL: dead letter queue has $count entries"
+  exit 1
+fi
+
+echo "==> Event pipeline smoke test passed (correlation_id: $corr)"

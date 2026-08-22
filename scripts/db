@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Database helper: ./scripts/db migrate | makemigration <msg> | reset
+# Alembic wiring arrives with the first persistent module (Spec 01); this entrypoint is
+# stable so docs and CI never change.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+cmd="${1:-help}"
+case "$cmd" in
+  migrate)
+    echo "No Alembic migrations registered yet (foundation stage uses in-memory stores)."
+    ;;
+  makemigration)
+    echo "No Alembic environment yet — added by the first persistent module (Spec 01)."
+    exit 1
+    ;;
+  reset)
+    docker compose -f infra/docker/compose.yaml down -v postgres 2>/dev/null || true
+    docker compose -f infra/docker/compose.yaml up -d postgres
+    echo "Postgres volume reset."
+    ;;
+  *)
+    echo "Usage: ./scripts/db {migrate|makemigration <msg>|reset}"
+    ;;
+esac

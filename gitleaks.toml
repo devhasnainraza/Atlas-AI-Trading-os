@@ -1,0 +1,21 @@
+title = "Atlas AI Trading OS — gitleaks configuration"
+description = "Secrets scanning rules (Spec 00 FR-007/SC-009)"
+
+# Extend the default ruleset; custom rules for Atlas-specific patterns.
+[extend]
+useDefault = true
+
+[[rules]]
+description = "Atlas vault placeholder (local dev key must never be committed)"
+id = "atlas-vault-kek"
+regex = '''ATLAS_VAULT_KEK\s*=\s*[A-Za-z0-9+/]{32,}={0,2}'''
+tags = ["vault", "local-only"]
+severity = "CRITICAL"
+
+[allowlist]
+# Placeholder values in example files are intentionally fake.
+paths = [
+    ".env.example",
+    "infra/docker/.env.example",
+    "docs",
+]

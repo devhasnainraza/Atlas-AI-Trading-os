@@ -1,0 +1,38 @@
+# Trivy configuration — vulnerability, secret, and misconfig scanning (Spec 00 T039)
+# Used by .github/workflows/security.yaml and local `trivy --config trivy.yaml fs .`
+
+severity:
+  - HIGH
+  - CRITICAL
+
+# Fail the job on findings; nightly runs must not go green with open CRITICAL/HIGH.
+exit-code: 1
+
+# Vulnerabilities with no upstream fix are tracked in the risk log, not CI-blocking.
+vulnerability:
+  ignore-unfixed: true
+
+scan:
+  scanners:
+    - vuln
+    - secret
+    - misconfig
+  skip-dirs:
+    - .venv
+    - node_modules
+    - .pytest_cache
+    - .git
+    - "**/__pycache__"
+
+misconfiguration:
+  # Dockerfiles, Compose, Helm, and Terraform under infra/ are all in scope.
+  include-non-failures: false
+
+secret:
+  # gitleaks.toml owns secret rules for the repo; Trivy uses its built-in set
+  # as a second, independent pass.
+  config: ""
+
+db:
+  # Keep CI reproducible: skip DB update only when a warm cache is present.
+  skip-update: false

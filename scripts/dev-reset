@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Wipe local infra volumes and return to a pristine state.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+echo "==> Stopping stack and removing volumes"
+docker compose -f infra/docker/compose.yaml -f infra/docker/compose.dev.yaml down -v --remove-orphans 2>/dev/null \
+  || docker compose -f infra/docker/compose.yaml down -v --remove-orphans
+
+echo "==> Restarting core dependencies"
+docker compose -f infra/docker/compose.yaml up -d
+
+echo "==> Dev environment reset complete"

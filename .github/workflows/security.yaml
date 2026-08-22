@@ -1,0 +1,29 @@
+name: Security nightly
+
+on:
+  schedule:
+    - cron: "37 2 * * *"   # off-hour, off-minute (avoids :00 thundering herd)
+  workflow_dispatch:
+
+jobs:
+  trivy:
+    name: Trivy filesystem + image scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          trivy-config: trivy.yaml
+
+  zap-baseline:
+    name: ZAP baseline (requires staging deploy — manual only)
+    runs-on: ubuntu-latest
+    if: false  # enable once staging environment is live (M6 milestone)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: ${{ secrets.STAGING_API_URL }}
