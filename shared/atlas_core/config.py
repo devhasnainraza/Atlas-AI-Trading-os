@@ -47,6 +47,11 @@ class AtlasSettings(BaseSettings):
     cors_allowed_origins: list[str] = ["http://localhost:3000"]
     rate_limit_default_per_minute: int = 120
 
+    #: Path to a JSON feature-flag file (see ``infra/flags/flags.json``). When unset the
+    #: runtime uses static flags and every evaluation falls back to the caller's declared
+    #: default — which is why those defaults are the safe answer, never the permissive one.
+    feature_flags_file: str | None = None
+
     @property
     def is_production(self) -> bool:
         return self.env == Environment.PRODUCTION

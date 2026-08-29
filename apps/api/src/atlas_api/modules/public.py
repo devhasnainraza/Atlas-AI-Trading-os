@@ -7,7 +7,7 @@ its router, event subscriptions, and health dependencies. Adding a module is add
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 
 from fastapi import APIRouter
@@ -34,6 +34,11 @@ class ModuleDef:
     routers_extra: tuple[APIRouter, ...] = ()
     subscriptions: tuple[EventSubscriptionDef, ...] = ()
     health_probes: dict[str, Callable[[], Awaitable[bool]]] = field(default_factory=dict)
+    #: Module-owned objects to attach to ``app.state``, so per-app state lives on the app
+    #: rather than in a module-level global. A global would make two composed apps in one
+    #: process share whichever was built last — harmless for a single deployment, wrong for
+    #: anything holding two apps at once, and the platform stays ignorant of what is inside.
+    app_state: Mapping[str, object] = field(default_factory=dict)
 
 
 class ModuleRegistry:

@@ -1,0 +1,16 @@
+{
+  "_comment": "Feature flags, GitOps-managed. Read by atlas_core.feature_flags.FileFlagProvider when ATLAS_FEATURE_FLAGS_FILE points here; hot-reloads on mtime change so a venue can be switched off without a redeploy. Every real-money venue and live order transmission start false — registering an adapter is not the same act as permitting it.",
+
+  "sample.guarded_capability": false,
+
+  "venue.paper.enabled": true,
+  "venue.mt5.enabled": false,
+  "venue.oanda.enabled": false,
+  "venue.binance.enabled": false,
+  "venue.bybit.enabled": false,
+  "venue.ibkr.enabled": false,
+
+  "trading.live_orders.enabled": false,
+  "trading.reconciliation.enabled": true,
+  "marketdata.streaming.enabled": true
+}

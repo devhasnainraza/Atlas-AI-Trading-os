@@ -57,6 +57,7 @@ known-first-party = [
     "atlas_events",
     "atlas_observability",
     "atlas_ai",
+    "atlas_venues",
     "atlas_worker",
     "atlas_scheduler",
 ]
@@ -68,12 +69,16 @@ extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "f
 
 # Module boundary contracts (Constitution X / plan §1.2) — enforced in CI via `lint-imports`.
 [tool.importlinter]
-root_packages = ["atlas_api", "atlas_core", "atlas_events", "atlas_observability", "atlas_ai"]
+root_packages = ["atlas_api", "atlas_core", "atlas_events", "atlas_observability", "atlas_ai", "atlas_venues"]
+# Required because some contracts forbid packages outside the root set — the venue SDKs
+# (MetaTrader5, ccxt, ib_insync, ibapi) and the worker/scheduler services. Without this,
+# import-linter refuses to run rather than silently ignoring those contracts.
+include_external_packages = true
 
 [[tool.importlinter.contracts]]
 name = "Shared packages must not import the API app"
 type = "forbidden"
-source_modules = ["atlas_core", "atlas_events", "atlas_observability", "atlas_ai"]
+source_modules = ["atlas_core", "atlas_events", "atlas_observability", "atlas_ai", "atlas_venues"]
 forbidden_modules = ["atlas_api"]
 
 [[tool.importlinter.contracts]]
@@ -81,3 +86,23 @@ name = "Modules may not import each other's internals (public.py only)"
 type = "forbidden"
 source_modules = ["atlas_api.modules.sample"]
 forbidden_modules = ["atlas_api.modules.platform.service", "atlas_api.modules.platform.repository", "atlas_api.modules.platform.domain"]
+
+# Spec 03 boundaries. The venue abstraction is the only path to a venue SDK, and the trading
+# modules must not reach around it or into each other's internals.
+[[tool.importlinter.contracts]]
+name = "Trading modules reach venues only through atlas_venues"
+type = "forbidden"
+source_modules = ["atlas_api.modules.trading", "atlas_api.modules.marketdata"]
+forbidden_modules = ["MetaTrader5", "ccxt", "ib_insync", "ibapi"]
+
+[[tool.importlinter.contracts]]
+name = "atlas_venues must not depend on API modules or the risk gate's callers"
+type = "forbidden"
+source_modules = ["atlas_venues"]
+forbidden_modules = ["atlas_api", "atlas_worker", "atlas_scheduler"]
+
+[[tool.importlinter.contracts]]
+name = "marketdata and trading may cross only via public.py"
+type = "forbidden"
+source_modules = ["atlas_api.modules.marketdata"]
+forbidden_modules = ["atlas_api.modules.trading.service", "atlas_api.modules.trading.repository", "atlas_api.modules.trading.domain", "atlas_api.modules.trading.router"]

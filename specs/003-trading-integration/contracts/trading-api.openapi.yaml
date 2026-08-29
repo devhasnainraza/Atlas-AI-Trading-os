@@ -1,0 +1,1299 @@
+openapi: 3.1.0
+info:
+  title: Atlas Trading Integration API
+  version: 0.1.0
+  description: |
+    Venue connectivity, market data, and order execution for Atlas AI Trading OS.
+
+    Invariants enforced by this contract:
+    - No operation transmits an order without a prior confirmed intent (two-phase flow).
+    - No operation accepts a parameter that skips, forces, or overrides the pre-trade risk gate.
+    - No response schema carries venue credential material.
+    - Every execution-bearing resource states its `environment` (live | demo | paper).
+servers:
+  - url: /v1
+tags:
+  - name: venues
+    description: Venue catalog and capability matrices
+  - name: connections
+    description: User venue connections and account discovery
+  - name: instruments
+    description: Canonical instruments and per-venue specifications
+  - name: market-data
+    description: Quotes, bars, subscriptions, and the streaming feed
+  - name: orders
+    description: Order intents, confirmation, amendment, cancellation, and history
+  - name: positions
+    description: Positions and protective levels
+  - name: risk
+    description: Risk policy, previews, and the kill switch
+  - name: mandates
+    description: Scoped automation mandates
+  - name: reconciliation
+    description: Reconciliation runs and discrepancies
+  - name: paper
+    description: Paper trading accounts
+
+paths:
+  /venues:
+    get:
+      tags: [venues]
+      summary: List supported venues with capability matrices
+      responses:
+        "200":
+          description: Venue catalog
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Venue" } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /venue-connections:
+    get:
+      tags: [connections]
+      summary: List the caller's venue connections
+      parameters:
+        - { name: environment, in: query, schema: { $ref: "#/components/schemas/Environment" } }
+        - { name: health, in: query, schema: { type: string, enum: [healthy, degraded, expired, failed, quarantined] } }
+      responses:
+        "200":
+          description: Connections
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/VenueConnection" } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [connections]
+      summary: Create a venue connection from a stored credential
+      description: |
+        References a credential in the Spec 01 vault by id; no secret material is accepted or
+        returned here. Creating a `live` connection requires step-up MFA (`403` with
+        `ATLAS-AUTH-MFA-REQUIRED` when absent). Atlas verifies actual granted permissions and
+        stores the narrower of declared-and-granted capabilities.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [venue_code, credential_id, environment, label]
+              properties:
+                venue_code: { type: string, examples: [binance] }
+                credential_id: { type: string, format: uuid }
+                environment: { $ref: "#/components/schemas/Environment" }
+                label: { type: string, maxLength: 60 }
+      responses:
+        "201":
+          description: Connection created and verified
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VenueConnection" }
+        "422":
+          description: Credential lacks the permissions required for the requested environment
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /venue-connections/{connection_id}:
+    parameters:
+      - { name: connection_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [connections]
+      summary: Get one connection with health and capabilities
+      responses:
+        "200":
+          description: Connection
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VenueConnection" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [connections]
+      summary: Disconnect a venue
+      description: Stops streams and routing. Order history is retained and never rewritten.
+      responses:
+        "204": { description: Disconnected }
+        default: { $ref: "#/components/responses/Error" }
+
+  /venue-connections/{connection_id}/verify:
+    post:
+      tags: [connections]
+      summary: Re-verify reachability and granted permissions
+      parameters:
+        - { name: connection_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Verification result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  health: { type: string, enum: [healthy, degraded, expired, failed, quarantined] }
+                  health_reason: { type: string, nullable: true }
+                  granted_capabilities: { $ref: "#/components/schemas/Capabilities" }
+                  verified_at: { type: string, format: date-time }
+        default: { $ref: "#/components/responses/Error" }
+
+  /venue-connections/{connection_id}/accounts:
+    get:
+      tags: [connections]
+      summary: List accounts exposed by a connection
+      description: |
+        Every account states `view_state` (`live｜stale｜unknown`) and `synced_at`. A stale or
+        unknown view is never presented as current.
+      parameters:
+        - { name: connection_id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: refresh, in: query, description: Force a venue snapshot before responding, schema: { type: boolean, default: false } }
+      responses:
+        "200":
+          description: Accounts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/VenueAccount" } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /instruments:
+    get:
+      tags: [instruments]
+      summary: Search instruments available on a connection
+      parameters:
+        - { name: connection_id, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: q, in: query, schema: { type: string } }
+        - { name: asset_class, in: query, schema: { type: string, enum: [forex, crypto, equity, futures, cfd] } }
+        - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 200 } }
+      responses:
+        "200":
+          description: Instruments
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Instrument" } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /instruments/{instrument_id}:
+    get:
+      tags: [instruments]
+      summary: Get one instrument specification
+      parameters:
+        - { name: instrument_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Instrument
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Instrument" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /market-data/quotes:
+    get:
+      tags: [market-data]
+      summary: Latest quotes with an explicit freshness verdict
+      description: |
+        Each quote carries `freshness` and `observed_at`. A quote past its asset-class freshness
+        limit is returned with `freshness: stale` — never silently substituted or extrapolated.
+      parameters:
+        - { name: connection_id, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: symbols, in: query, required: true, description: Comma-separated canonical symbols, schema: { type: string } }
+      responses:
+        "200":
+          description: Quotes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Quote" } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /market-data/candles:
+    get:
+      tags: [market-data]
+      summary: Historical bars with explicit gap markers
+      parameters:
+        - { name: connection_id, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: symbol, in: query, required: true, schema: { type: string } }
+        - { name: timeframe, in: query, required: true, schema: { type: string, enum: ["1m", "5m", "15m", "1h", "4h", "1d"] } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { name: limit, in: query, schema: { type: integer, default: 500, maximum: 5000 } }
+      responses:
+        "200":
+          description: Bars, ascending by open_time; known-missing intervals marked `is_gap`
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  venue_code: { type: string }
+                  symbol: { type: string }
+                  timeframe: { type: string }
+                  items: { type: array, items: { $ref: "#/components/schemas/Candle" } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /market-data/subscriptions:
+    get:
+      tags: [market-data]
+      summary: List active market data subscriptions
+      responses:
+        "200":
+          description: Subscriptions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Subscription" } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [market-data]
+      summary: Subscribe to an instrument feed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [connection_id, symbol]
+              properties:
+                connection_id: { type: string, format: uuid }
+                symbol: { type: string }
+                timeframes: { type: array, items: { type: string, enum: ["1m", "5m", "15m", "1h", "4h", "1d"] } }
+      responses:
+        "201":
+          description: Subscribed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Subscription" }
+        "429":
+          description: Per-user subscription cap or venue rate limit reached
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /market-data/subscriptions/{subscription_id}:
+    delete:
+      tags: [market-data]
+      summary: Unsubscribe
+      parameters:
+        - { name: subscription_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Unsubscribed }
+        default: { $ref: "#/components/responses/Error" }
+
+  /market-data/stream:
+    get:
+      tags: [market-data]
+      summary: Server-Sent Events stream of quotes and feed-state changes
+      description: |
+        Event names: `quote`, `feed.degraded`, `feed.recovered`, `quote.stale`. Every `quote`
+        event carries `observed_at`; the client shows staleness rather than a last-known price
+        presented as current.
+      parameters:
+        - { name: connection_id, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: symbols, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema: { type: string }
+        default: { $ref: "#/components/responses/Error" }
+
+  /orders/intents:
+    post:
+      tags: [orders]
+      summary: Create an order intent (prices the order and runs the risk gate)
+      description: |
+        Validates instrument constraints and precision, requires a fresh quote, computes estimated
+        cost/fees/margin impact, and evaluates the pre-trade risk gate. Nothing is transmitted to
+        the venue. A `blocked` verdict returns `201` with `state: rejected_by_risk` and the
+        breached rules, so the user sees why. There is no parameter that skips this step.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [connection_id, venue_account_id, symbol, side, order_type, quantity]
+              properties:
+                connection_id: { type: string, format: uuid }
+                venue_account_id: { type: string, format: uuid }
+                symbol: { type: string, examples: [EURUSD] }
+                side: { type: string, enum: [buy, sell] }
+                order_type: { type: string, enum: [market, limit, stop, stop_limit] }
+                quantity: { $ref: "#/components/schemas/Decimal" }
+                limit_price: { $ref: "#/components/schemas/Decimal" }
+                stop_price: { $ref: "#/components/schemas/Decimal" }
+                time_in_force: { type: string, enum: [GTC, IOC, FOK, DAY, GTD], default: GTC }
+                good_till_date: { type: string, format: date-time }
+                stop_loss: { $ref: "#/components/schemas/Decimal" }
+                take_profit: { $ref: "#/components/schemas/Decimal" }
+                reduce_only: { type: boolean, default: false }
+                origin: { type: string, enum: [manual, agent, strategy, mandate], default: manual }
+                origin_ref: { type: string, nullable: true }
+      responses:
+        "201":
+          description: Intent created — review required before confirmation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderIntent" }
+        "409":
+          description: Kill switch engaged, reconciliation hold active, or connection not routable
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "422":
+          description: Instrument not tradable, session closed, invalid precision or quantity step, or market data stale
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /orders/intents/{intent_id}:
+    get:
+      tags: [orders]
+      summary: Get an intent with its risk verdict and expiry
+      parameters:
+        - { name: intent_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Intent
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderIntent" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /orders/intents/{intent_id}/confirm:
+    post:
+      tags: [orders]
+      summary: Confirm an intent — the only path that transmits an order
+      description: |
+        Requires the `verdict_hash` returned with the intent. The server re-checks quote
+        freshness, account state, kill switch, mandate scope, and hash equality; any drift
+        returns `409` with the intent invalidated and re-review required. Transmission is
+        at-most-once per intent: a repeated confirmation returns the same order and never
+        reaches the venue a second time.
+      parameters:
+        - { name: intent_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [verdict_hash]
+              properties:
+                verdict_hash: { type: string }
+      responses:
+        "202":
+          description: Order created and transmitted (or transmission outcome pending)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "200":
+          description: Idempotent replay — the order already created for this intent
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "409":
+          description: Intent expired or invalidated (price drift, account change, spec change, kill switch), or verdict hash mismatch
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /orders:
+    get:
+      tags: [orders]
+      summary: List orders
+      parameters:
+        - { name: connection_id, in: query, schema: { type: string, format: uuid } }
+        - { name: environment, in: query, schema: { $ref: "#/components/schemas/Environment" } }
+        - { name: state, in: query, schema: { type: string, enum: [submitting, working, partially_filled, filled, canceled, rejected, expired, unresolved, amending, canceling] } }
+        - { name: symbol, in: query, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 200 } }
+      responses:
+        "200":
+          description: Orders
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Order" } }
+                  next_cursor: { type: string, nullable: true }
+        default: { $ref: "#/components/responses/Error" }
+
+  /orders/{order_id}:
+    get:
+      tags: [orders]
+      summary: Get one order
+      parameters:
+        - { name: order_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Order
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /orders/{order_id}/chain:
+    get:
+      tags: [orders]
+      summary: Full traceability chain for one order
+      description: |
+        Origin → risk verdict (rules, limits, actual values) → confirmation → submission →
+        sanitized venue responses → fills → state transitions, in one payload.
+      parameters:
+        - { name: order_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Order chain
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order: { $ref: "#/components/schemas/Order" }
+                  intent: { $ref: "#/components/schemas/OrderIntent" }
+                  risk_verdict: { $ref: "#/components/schemas/RiskVerdict" }
+                  submission:
+                    type: object
+                    properties:
+                      attempted_at: { type: string, format: date-time }
+                      outcome: { type: string, enum: [acked, rejected, timeout, ambiguous, pending] }
+                  events: { type: array, items: { $ref: "#/components/schemas/OrderEvent" } }
+                  fills: { type: array, items: { $ref: "#/components/schemas/Fill" } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /orders/{order_id}/amend:
+    post:
+      tags: [orders]
+      summary: Request an amendment (venue-confirmed only)
+      description: |
+        Amendment runs the risk gate again on the new terms. Atlas reports the venue's actual
+        answer — a refused amendment is never presented as accepted.
+      parameters:
+        - { name: order_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              minProperties: 1
+              properties:
+                quantity: { $ref: "#/components/schemas/Decimal" }
+                limit_price: { $ref: "#/components/schemas/Decimal" }
+                stop_price: { $ref: "#/components/schemas/Decimal" }
+                stop_loss: { $ref: "#/components/schemas/Decimal" }
+                take_profit: { $ref: "#/components/schemas/Decimal" }
+                good_till_date: { type: string, format: date-time }
+      responses:
+        "202":
+          description: Amendment requested; order enters `amending`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "409":
+          description: Order not amendable in its current state, or venue does not support amendment for this order type
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /orders/{order_id}/cancel:
+    post:
+      tags: [orders]
+      summary: Request cancellation (venue-confirmed only)
+      description: |
+        Remains available while a kill switch is engaged. A partially filled order cancels only
+        its remaining quantity; executed quantity is never misreported as canceled.
+      parameters:
+        - { name: order_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "202":
+          description: Cancellation requested; order enters `canceling`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "409":
+          description: Order already terminal, or venue refused cancellation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /positions:
+    get:
+      tags: [positions]
+      summary: List positions with freshness and external-origin flags
+      parameters:
+        - { name: connection_id, in: query, schema: { type: string, format: uuid } }
+        - { name: environment, in: query, schema: { $ref: "#/components/schemas/Environment" } }
+        - { name: state, in: query, schema: { type: string, enum: [open, closing, closed] } }
+      responses:
+        "200":
+          description: Positions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Position" } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /positions/{position_id}/close-intent:
+    post:
+      tags: [positions]
+      summary: Create an intent to close (or partially close) a position
+      description: Uses the same intent → confirm → risk gate path as any other order.
+      parameters:
+        - { name: position_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                quantity: { $ref: "#/components/schemas/Decimal" }
+      responses:
+        "201":
+          description: Close intent created — confirmation required
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderIntent" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /positions/{position_id}/protect-intent:
+    post:
+      tags: [positions]
+      summary: Create an intent to set or change protective levels
+      parameters:
+        - { name: position_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              minProperties: 1
+              properties:
+                stop_loss: { $ref: "#/components/schemas/Decimal" }
+                take_profit: { $ref: "#/components/schemas/Decimal" }
+      responses:
+        "201":
+          description: Protect intent created — confirmation required
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderIntent" }
+        "422":
+          description: Venue does not support the requested protective level for this instrument
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /risk/policy:
+    get:
+      tags: [risk]
+      summary: Get the caller's risk policy
+      parameters:
+        - { name: connection_id, in: query, description: Omit for the global policy, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Policy
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RiskPolicy" }
+        default: { $ref: "#/components/responses/Error" }
+    put:
+      tags: [risk]
+      summary: Replace the risk policy
+      description: |
+        Changes apply only to future orders; working orders are unaffected. Each change is
+        versioned and audited. There is no field here that disables the gate.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RiskPolicyWrite" }
+      responses:
+        "200":
+          description: Updated policy
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RiskPolicy" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /risk/preview:
+    post:
+      tags: [risk]
+      summary: Evaluate proposed order terms against the risk gate without creating an intent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [connection_id, venue_account_id, symbol, side, order_type, quantity]
+              properties:
+                connection_id: { type: string, format: uuid }
+                venue_account_id: { type: string, format: uuid }
+                symbol: { type: string }
+                side: { type: string, enum: [buy, sell] }
+                order_type: { type: string, enum: [market, limit, stop, stop_limit] }
+                quantity: { $ref: "#/components/schemas/Decimal" }
+                limit_price: { $ref: "#/components/schemas/Decimal" }
+                stop_price: { $ref: "#/components/schemas/Decimal" }
+                reduce_only: { type: boolean, default: false }
+      responses:
+        "200":
+          description: Verdict (advisory copy; confirmation always re-evaluates)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RiskVerdict" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /risk/kill-switch:
+    get:
+      tags: [risk]
+      summary: Current kill-switch state affecting the caller
+      responses:
+        "200":
+          description: Kill-switch state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/KillSwitch" } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [risk]
+      summary: Engage or release the caller's kill switch
+      description: |
+        Engaging blocks all new and position-increasing orders across the caller's connections and
+        takes effect in under one second. Cancellations and position closes remain available.
+        Operator-scope switches are managed through the admin surface, not this endpoint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [engaged]
+              properties:
+                engaged: { type: boolean }
+                reason: { type: string, maxLength: 280 }
+      responses:
+        "200":
+          description: New state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KillSwitch" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /automation-mandates:
+    get:
+      tags: [mandates]
+      summary: List automation mandates with remaining budget
+      responses:
+        "200":
+          description: Mandates
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/AutomationMandate" } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [mandates]
+      summary: Grant a scoped automation mandate
+      description: |
+        Requires step-up MFA. Scope, caps, and an expiry (≤ 30 days) are mandatory. A mandate
+        waives per-order confirmation only — the risk gate still evaluates every order.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [label, connection_ids, scope_instruments, max_order_notional, max_total_commitment_notional, expires_at]
+              properties:
+                label: { type: string, maxLength: 60 }
+                connection_ids: { type: array, minItems: 1, items: { type: string, format: uuid } }
+                scope_instruments: { type: array, minItems: 1, items: { type: string } }
+                max_order_notional: { $ref: "#/components/schemas/Decimal" }
+                max_total_commitment_notional: { $ref: "#/components/schemas/Decimal" }
+                max_orders_per_period: { type: integer, minimum: 1 }
+                period_seconds: { type: integer, minimum: 60 }
+                expires_at: { type: string, format: date-time }
+      responses:
+        "201":
+          description: Mandate granted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AutomationMandate" }
+        "403":
+          description: Step-up MFA required
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /automation-mandates/{mandate_id}:
+    delete:
+      tags: [mandates]
+      summary: Revoke a mandate immediately
+      description: Single action, no additional friction. In-flight orders are reported honestly.
+      parameters:
+        - { name: mandate_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Revoked }
+        default: { $ref: "#/components/responses/Error" }
+
+  /reconciliation/runs:
+    get:
+      tags: [reconciliation]
+      summary: List reconciliation runs
+      parameters:
+        - { name: connection_id, in: query, schema: { type: string, format: uuid } }
+        - { name: outcome, in: query, schema: { type: string, enum: [clean, corrected, unresolved, failed] } }
+      responses:
+        "200":
+          description: Runs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/ReconciliationRun" } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [reconciliation]
+      summary: Trigger reconciliation for a connection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [connection_id]
+              properties:
+                connection_id: { type: string, format: uuid }
+      responses:
+        "202":
+          description: Run started
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReconciliationRun" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /reconciliation/runs/{run_id}:
+    get:
+      tags: [reconciliation]
+      summary: Get a run with its discrepancies and corrections
+      parameters:
+        - { name: run_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Run detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  run: { $ref: "#/components/schemas/ReconciliationRun" }
+                  discrepancies: { type: array, items: { $ref: "#/components/schemas/Discrepancy" } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /paper/accounts:
+    get:
+      tags: [paper]
+      summary: List paper accounts with their disclosed fill model
+      responses:
+        "200":
+          description: Paper accounts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/PaperAccount" } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [paper]
+      summary: Create a paper trading account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [starting_balance, currency]
+              properties:
+                label: { type: string, maxLength: 60 }
+                starting_balance: { $ref: "#/components/schemas/Decimal" }
+                currency: { type: string, minLength: 3, maxLength: 3 }
+                leverage_profile: { type: string, description: Venue code whose margin profile is mirrored }
+      responses:
+        "201":
+          description: Paper account created (environment `paper`)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaperAccount" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /paper/accounts/{paper_account_id}/reset:
+    post:
+      tags: [paper]
+      summary: Reset a paper account to its starting state
+      description: The reset is recorded; prior simulated history is excluded from performance views.
+      parameters:
+        - { name: paper_account_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Reset complete
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaperAccount" }
+        default: { $ref: "#/components/responses/Error" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: "JWT or atlas_ API key"
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: __Host-access
+
+  responses:
+    Error:
+      description: Error envelope (Spec 00 standard)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  schemas:
+    ErrorEnvelope:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: |
+                `ATLAS-TRD-001` connection unavailable · `-002` capability not permitted ·
+                `-003` instrument not tradable or session closed · `-004` invalid quantity or
+                precision · `-005` stale market data · `-006` intent expired or invalidated ·
+                `-007` duplicate submission blocked · `-008` order not amendable or cancelable ·
+                `-009` venue rejected · `-010` outcome unresolved · `-011` reconciliation hold ·
+                `-012` rate limited by venue · `ATLAS-RISK-001` limit breached ·
+                `-002` kill switch engaged · `-003` mandate scope exceeded or expired ·
+                `-004` risk inputs unavailable, recommend wait
+            message: { type: string, description: Human-readable, sanitized — never a raw venue payload }
+            correlation_id: { type: string }
+            details:
+              type: object
+              additionalProperties: true
+              description: Structured context, e.g. breached_rules, observed_at, venue_reason_code
+
+    Environment:
+      type: string
+      enum: [live, demo, paper]
+
+    Decimal:
+      type: string
+      pattern: "^-?[0-9]+(\\.[0-9]+)?$"
+      description: Exact decimal as a string; never a JSON float
+
+    Capabilities:
+      type: object
+      properties:
+        order_types: { type: array, items: { type: string } }
+        time_in_force: { type: array, items: { type: string } }
+        supports_amend: { type: boolean }
+        protective_levels: { type: string, enum: [attached, separate_orders, unsupported] }
+        supports_streaming: { type: boolean }
+        environments: { type: array, items: { $ref: "#/components/schemas/Environment" } }
+        read_only: { type: boolean, description: True when the credential grants no trading permission }
+
+    Venue:
+      type: object
+      properties:
+        code: { type: string }
+        display_name: { type: string }
+        asset_classes: { type: array, items: { type: string } }
+        capability_matrix: { $ref: "#/components/schemas/Capabilities" }
+        capability_version: { type: integer }
+        supported_environments: { type: array, items: { $ref: "#/components/schemas/Environment" } }
+        status: { type: string, enum: [available, beta, disabled] }
+
+    VenueConnection:
+      type: object
+      description: Contains no credential material — only a reference id.
+      properties:
+        id: { type: string, format: uuid }
+        venue_code: { type: string }
+        label: { type: string }
+        environment: { $ref: "#/components/schemas/Environment" }
+        credential_id: { type: string, format: uuid }
+        granted_capabilities: { $ref: "#/components/schemas/Capabilities" }
+        health: { type: string, enum: [healthy, degraded, expired, failed, quarantined] }
+        health_reason: { type: string, nullable: true }
+        routing_hold: { type: boolean, description: True while an unresolved discrepancy blocks order routing }
+        last_contact_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    VenueAccount:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        connection_id: { type: string, format: uuid }
+        venue_account_ref: { type: string }
+        environment: { $ref: "#/components/schemas/Environment" }
+        base_currency: { type: string }
+        balance: { $ref: "#/components/schemas/Decimal" }
+        equity: { $ref: "#/components/schemas/Decimal" }
+        margin_used: { $ref: "#/components/schemas/Decimal" }
+        margin_available: { $ref: "#/components/schemas/Decimal" }
+        unrealized_pnl: { $ref: "#/components/schemas/Decimal" }
+        leverage: { $ref: "#/components/schemas/Decimal" }
+        view_state: { type: string, enum: [live, stale, unknown] }
+        synced_at: { type: string, format: date-time, nullable: true }
+
+    Instrument:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        venue_code: { type: string }
+        canonical_symbol: { type: string }
+        venue_symbol: { type: string }
+        asset_class: { type: string }
+        base_currency: { type: string, nullable: true }
+        quote_currency: { type: string, nullable: true }
+        price_precision: { type: integer }
+        tick_size: { $ref: "#/components/schemas/Decimal" }
+        quantity_min: { $ref: "#/components/schemas/Decimal" }
+        quantity_max: { $ref: "#/components/schemas/Decimal" }
+        quantity_step: { $ref: "#/components/schemas/Decimal" }
+        contract_size: { $ref: "#/components/schemas/Decimal" }
+        max_leverage: { $ref: "#/components/schemas/Decimal" }
+        session_state: { type: string, enum: [open, closed, pre, halted, suspended] }
+        next_session_change_at: { type: string, format: date-time, nullable: true }
+        tradable: { type: boolean }
+        spec_version: { type: integer }
+        refreshed_at: { type: string, format: date-time }
+
+    Quote:
+      type: object
+      properties:
+        venue_code: { type: string }
+        symbol: { type: string }
+        bid: { $ref: "#/components/schemas/Decimal" }
+        ask: { $ref: "#/components/schemas/Decimal" }
+        last: { $ref: "#/components/schemas/Decimal" }
+        observed_at: { type: string, format: date-time }
+        age_seconds: { type: number }
+        freshness: { type: string, enum: [fresh, stale] }
+
+    Candle:
+      type: object
+      properties:
+        open_time: { type: string, format: date-time }
+        open: { $ref: "#/components/schemas/Decimal" }
+        high: { $ref: "#/components/schemas/Decimal" }
+        low: { $ref: "#/components/schemas/Decimal" }
+        close: { $ref: "#/components/schemas/Decimal" }
+        volume: { $ref: "#/components/schemas/Decimal" }
+        is_gap: { type: boolean }
+        source: { type: string, enum: [venue_stream, venue_backfill, aggregated] }
+
+    Subscription:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        connection_id: { type: string, format: uuid }
+        symbol: { type: string }
+        timeframes: { type: array, items: { type: string } }
+        active: { type: boolean }
+        created_at: { type: string, format: date-time }
+
+    OrderIntent:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        connection_id: { type: string, format: uuid }
+        venue_account_id: { type: string, format: uuid }
+        environment: { $ref: "#/components/schemas/Environment" }
+        symbol: { type: string }
+        side: { type: string, enum: [buy, sell] }
+        order_type: { type: string, enum: [market, limit, stop, stop_limit] }
+        quantity: { $ref: "#/components/schemas/Decimal" }
+        limit_price: { $ref: "#/components/schemas/Decimal" }
+        stop_price: { $ref: "#/components/schemas/Decimal" }
+        time_in_force: { type: string }
+        stop_loss: { $ref: "#/components/schemas/Decimal" }
+        take_profit: { $ref: "#/components/schemas/Decimal" }
+        reduce_only: { type: boolean }
+        origin: { type: string, enum: [manual, agent, strategy, mandate] }
+        quote_snapshot: { $ref: "#/components/schemas/Quote" }
+        estimated_cost: { $ref: "#/components/schemas/Decimal" }
+        estimated_fees: { $ref: "#/components/schemas/Decimal" }
+        margin_impact: { $ref: "#/components/schemas/Decimal" }
+        risk_verdict: { $ref: "#/components/schemas/RiskVerdict" }
+        verdict_hash: { type: string, description: Must be echoed at confirmation }
+        state: { type: string, enum: [pending_confirmation, confirmed, expired, invalidated, rejected_by_risk] }
+        expires_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+
+    Order:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        intent_id: { type: string, format: uuid }
+        connection_id: { type: string, format: uuid }
+        venue_account_id: { type: string, format: uuid }
+        environment: { $ref: "#/components/schemas/Environment" }
+        client_order_id: { type: string }
+        venue_order_id: { type: string, nullable: true }
+        symbol: { type: string }
+        side: { type: string, enum: [buy, sell] }
+        order_type: { type: string }
+        quantity: { $ref: "#/components/schemas/Decimal" }
+        limit_price: { $ref: "#/components/schemas/Decimal" }
+        stop_price: { $ref: "#/components/schemas/Decimal" }
+        time_in_force: { type: string }
+        filled_quantity: { $ref: "#/components/schemas/Decimal" }
+        remaining_quantity: { $ref: "#/components/schemas/Decimal" }
+        average_fill_price: { $ref: "#/components/schemas/Decimal" }
+        state:
+          type: string
+          enum: [submitting, working, partially_filled, filled, canceled, rejected, expired, unresolved, amending, canceling]
+          description: |
+            `unresolved` means the venue outcome is genuinely unknown. Atlas does not resubmit;
+            reconciliation determines the true state and the order transitions from there.
+        state_reason: { type: string, nullable: true, description: Sanitized venue reason }
+        origin: { type: string }
+        submitted_at: { type: string, format: date-time, nullable: true }
+        acked_at: { type: string, format: date-time, nullable: true }
+        unresolved_since: { type: string, format: date-time, nullable: true }
+        correlation_id: { type: string }
+        created_at: { type: string, format: date-time }
+
+    OrderEvent:
+      type: object
+      properties:
+        sequence: { type: integer }
+        event_type: { type: string }
+        from_state: { type: string, nullable: true }
+        to_state: { type: string, nullable: true }
+        actor: { type: string, enum: [user, system, venue, reconciliation] }
+        detail: { type: object, additionalProperties: true }
+        occurred_at: { type: string, format: date-time }
+
+    Fill:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        quantity: { $ref: "#/components/schemas/Decimal" }
+        price: { $ref: "#/components/schemas/Decimal" }
+        fee_amount: { $ref: "#/components/schemas/Decimal" }
+        fee_currency: { type: string, nullable: true }
+        liquidity: { type: string, enum: [maker, taker, unknown] }
+        is_simulated: { type: boolean }
+        fill_model_version: { type: string, nullable: true }
+        filled_at: { type: string, format: date-time }
+
+    Position:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        connection_id: { type: string, format: uuid }
+        venue_account_id: { type: string, format: uuid }
+        environment: { $ref: "#/components/schemas/Environment" }
+        symbol: { type: string }
+        side: { type: string, enum: [long, short] }
+        quantity: { $ref: "#/components/schemas/Decimal" }
+        average_entry_price: { $ref: "#/components/schemas/Decimal" }
+        unrealized_pnl: { $ref: "#/components/schemas/Decimal" }
+        realized_pnl: { $ref: "#/components/schemas/Decimal" }
+        stop_loss: { $ref: "#/components/schemas/Decimal" }
+        take_profit: { $ref: "#/components/schemas/Decimal" }
+        opened_externally: { type: boolean }
+        state: { type: string, enum: [open, closing, closed] }
+        synced_at: { type: string, format: date-time }
+
+    RiskPolicyWrite:
+      type: object
+      additionalProperties: false
+      description: No field disables or bypasses evaluation.
+      properties:
+        connection_id: { type: string, format: uuid, nullable: true }
+        max_order_quantity: { $ref: "#/components/schemas/Decimal" }
+        max_order_notional: { $ref: "#/components/schemas/Decimal" }
+        max_position_notional_per_instrument: { $ref: "#/components/schemas/Decimal" }
+        max_total_exposure_notional: { $ref: "#/components/schemas/Decimal" }
+        max_daily_loss: { $ref: "#/components/schemas/Decimal" }
+        daily_window_reset_time: { type: string, examples: ["00:00"] }
+        daily_window_timezone: { type: string, examples: ["UTC"] }
+        max_open_positions: { type: integer, minimum: 1 }
+        max_leverage: { $ref: "#/components/schemas/Decimal" }
+        instrument_allowlist: { type: array, items: { type: string } }
+        session_guard: { type: boolean }
+        duplicate_window_seconds: { type: integer, minimum: 0 }
+
+    RiskPolicy:
+      allOf:
+        - $ref: "#/components/schemas/RiskPolicyWrite"
+        - type: object
+          properties:
+            scope: { type: string, enum: [global, connection] }
+            version: { type: integer }
+            effective_from: { type: string, format: date-time }
+
+    RiskVerdict:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        decision: { type: string, enum: [allowed, allowed_with_warnings, blocked] }
+        policy_version: { type: integer }
+        rules_evaluated:
+          type: array
+          description: Every rule considered, not only failures
+          items:
+            type: object
+            properties:
+              rule: { type: string }
+              limit_value: { $ref: "#/components/schemas/Decimal" }
+              actual_value: { $ref: "#/components/schemas/Decimal" }
+              passed: { type: boolean }
+        breached_rules: { type: array, items: { type: string } }
+        inputs_state:
+          type: object
+          description: Proves the gate failed closed rather than guessing
+          properties:
+            quote_freshness: { type: string, enum: [fresh, stale, missing] }
+            account_view_state: { type: string, enum: [live, stale, unknown] }
+            reconciliation_state: { type: string, enum: [clean, pending, held] }
+        recommendation: { type: string, nullable: true, examples: ["recommend_wait"] }
+        verdict_hash: { type: string }
+        correlation_id: { type: string }
+        evaluated_at: { type: string, format: date-time }
+
+    KillSwitch:
+      type: object
+      properties:
+        scope: { type: string, enum: [user, venue, global] }
+        target: { type: string, nullable: true, description: Venue code for venue scope }
+        engaged: { type: boolean }
+        reason: { type: string, nullable: true }
+        actor_type: { type: string, enum: [user, operator] }
+        engaged_at: { type: string, format: date-time, nullable: true }
+        released_at: { type: string, format: date-time, nullable: true }
+
+    AutomationMandate:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        label: { type: string }
+        connection_ids: { type: array, items: { type: string, format: uuid } }
+        scope_instruments: { type: array, items: { type: string } }
+        max_order_notional: { $ref: "#/components/schemas/Decimal" }
+        max_total_commitment_notional: { $ref: "#/components/schemas/Decimal" }
+        committed_notional: { $ref: "#/components/schemas/Decimal" }
+        max_orders_per_period: { type: integer, nullable: true }
+        orders_used: { type: integer }
+        state: { type: string, enum: [active, exhausted, expired, revoked] }
+        expires_at: { type: string, format: date-time }
+        granted_at: { type: string, format: date-time }
+
+    ReconciliationRun:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        connection_id: { type: string, format: uuid }
+        trigger: { type: string, enum: [scheduled, unresolved_order, stream_gap, credential_revoked, manual] }
+        started_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time, nullable: true }
+        orders_compared: { type: integer }
+        positions_compared: { type: integer }
+        discrepancies_found: { type: integer }
+        discrepancies_resolved: { type: integer }
+        outcome: { type: string, enum: [clean, corrected, unresolved, failed] }
+
+    Discrepancy:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        entity_type: { type: string, enum: [order, position, balance] }
+        entity_ref: { type: string }
+        discrepancy_class:
+          type: string
+          enum: [missing_locally, missing_at_venue, quantity_mismatch, price_mismatch, state_mismatch, unknown_order]
+        local_value: { type: object, additionalProperties: true }
+        venue_value: { type: object, additionalProperties: true }
+        resolution: { type: string, enum: [applied_venue_state, imported, closed_locally, escalated] }
+        resolved_at: { type: string, format: date-time, nullable: true }
+
+    PaperAccount:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        connection_id: { type: string, format: uuid }
+        environment: { type: string, enum: [paper] }
+        label: { type: string }
+        starting_balance: { $ref: "#/components/schemas/Decimal" }
+        balance: { $ref: "#/components/schemas/Decimal" }
+        equity: { $ref: "#/components/schemas/Decimal" }
+        currency: { type: string }
+        leverage_profile: { type: string }
+        fill_model:
+          type: object
+          description: Disclosed simulation assumptions
+          properties:
+            spread_widening_bps: { type: number }
+            slippage_bps: { type: number }
+            latency_ms: { type: integer }
+        fill_model_version: { type: string }
+        reset_count: { type: integer }
+        last_reset_at: { type: string, format: date-time, nullable: true }
+
+security:
+  - bearerAuth: []
+  - cookieAuth: []

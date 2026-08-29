@@ -14,11 +14,14 @@ from atlas_api.middleware.correlation import CorrelationMiddleware
 from atlas_api.middleware.errors import register_error_handlers
 from atlas_api.middleware.rate_limit import RateLimitMiddleware
 from atlas_api.middleware.security_headers import SecurityHeadersMiddleware
+from atlas_api.modules.marketdata.public import build_marketdata_module
 from atlas_api.modules.platform.public import build_platform_module
 from atlas_api.modules.public import ModuleDef
 from atlas_api.modules.sample.public import build_sample_module
+from atlas_api.modules.trading.public import build_trading_module
 from atlas_api.runtime import PlatformRuntime
 from atlas_core.config import AtlasSettings, load_settings
+from atlas_core.feature_flags import FeatureFlags, FileFlagProvider
 from atlas_observability import configure_observability, get_logger
 
 logger = get_logger("atlas_api.main")
@@ -34,6 +37,11 @@ def create_app(settings: AtlasSettings | None = None) -> FastAPI:
         description="Unified API layer — platform foundation surface (Spec 00).",
     )
     runtime = PlatformRuntime(settings=settings)
+    if settings.feature_flags_file:
+        # File-backed flags hot-reload on mtime change, so an operator can switch a venue off
+        # without a redeploy. Unset, the runtime keeps static flags and every evaluation falls
+        # back to the caller's default — which is why those defaults are all fail-closed.
+        runtime.flags = FeatureFlags(FileFlagProvider(settings.feature_flags_file))
     app.state.runtime = runtime
 
     # Middleware — outermost added last with BaseHTTPMiddleware ordering.
@@ -52,7 +60,12 @@ def create_app(settings: AtlasSettings | None = None) -> FastAPI:
     register_error_handlers(app)
 
     # Compose modules — additive only (FR-003).
-    for module in (build_platform_module(), build_sample_module()):
+    for module in (
+        build_platform_module(),
+        build_sample_module(),
+        build_marketdata_module(),
+        build_trading_module(),
+    ):
         _register_module(app, runtime, module)
 
     logger.info("app_composed", modules=[m.name for m in runtime.modules.all_modules()])
@@ -61,6 +74,15 @@ def create_app(settings: AtlasSettings | None = None) -> FastAPI:
 
 def _register_module(app: FastAPI, runtime: PlatformRuntime, module: ModuleDef) -> None:
     runtime.modules.register(module)
+
+    for key, value in module.app_state.items():
+        if hasattr(app.state, key):
+            # Two modules claiming one key would silently hand one of them the other's
+            # objects — a venue registry belonging to a different module, for instance.
+            raise ValueError(
+                f"Module '{module.name}' would overwrite existing app state key '{key}'"
+            )
+        setattr(app.state, key, value)
 
     routers = ([module.router] if module.router else []) + list(module.routers_extra)
     for router in routers:
