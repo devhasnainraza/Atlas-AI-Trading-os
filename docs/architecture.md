@@ -43,7 +43,7 @@ import-linter.
 
 ## Key design decisions
 
-Full rationale in `specs/00-platform-foundation/research.md`. Short version:
+Full rationale in `specs/001-platform-foundation/research.md`. Short version:
 
 - **Modular monolith** over microservices: one deployment, clear seams, horizontal scale
   via workers and HPA. Modules can be extracted later without changing their contracts.

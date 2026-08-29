@@ -1,7 +1,7 @@
 # Quickstart: Auth & Security Module (Local Development)
 
 **Feature**: 01-auth-security | Builds on the Spec 00 local stack
-(`specs/00-platform-foundation/quickstart.md`) — complete that first.
+(`specs/001-platform-foundation/quickstart.md`) — complete that first.
 
 ## Extra prerequisites
 

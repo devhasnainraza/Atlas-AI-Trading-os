@@ -1,7 +1,7 @@
 # Implementation Plan: Platform Foundation & Core System Architecture
 
 **Branch**: `00-platform-foundation` | **Date**: 2026-08-04 | **Spec**: [spec.md](./spec.md)
-**Input**: Feature specification from `/specs/00-platform-foundation/spec.md`
+**Input**: Feature specification from `/specs/001-platform-foundation/spec.md`
 
 ## Summary
 
@@ -167,7 +167,7 @@ Full rationale, alternatives, and tradeoffs are in [research.md](./research.md).
 ### Documentation (this feature)
 
 ```text
-specs/00-platform-foundation/
+specs/001-platform-foundation/
 ├── plan.md              # This file
 ├── research.md          # Phase 0 — technology decisions & rationale
 ├── data-model.md        # Phase 1 — platform entities

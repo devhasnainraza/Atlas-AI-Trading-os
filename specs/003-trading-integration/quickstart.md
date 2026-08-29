@@ -1,8 +1,8 @@
 # Quickstart: Trading Integration (Local Development)
 
 **Feature**: 003-trading-integration | Builds on the Spec 00 local stack
-(`specs/00-platform-foundation/quickstart.md`) and Spec 01 auth/vault
-(`specs/01-auth-security/quickstart.md`) — complete both first.
+(`specs/001-platform-foundation/quickstart.md`) and Spec 01 auth/vault
+(`specs/002-auth-security/quickstart.md`) — complete both first.
 
 Everything below works **without any real venue account**: the paper venue and the recorded
 venue simulators cover US1–US7 end to end.

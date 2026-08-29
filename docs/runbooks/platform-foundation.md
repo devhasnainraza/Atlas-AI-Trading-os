@@ -75,7 +75,7 @@ uv run pytest tests/e2e        # with the stack up, the 9 must pass instead of s
 ```
 
 Then walk the §3 checklist in
-[`specs/00-platform-foundation/quickstart.md`](../../specs/00-platform-foundation/quickstart.md),
+[`specs/001-platform-foundation/quickstart.md`](../../specs/001-platform-foundation/quickstart.md),
 which also carries the recorded gate evidence.
 
 **Caveat worth knowing during an incident:** `tests/e2e/test_local_stack.py` self-skips when

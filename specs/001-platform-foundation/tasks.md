@@ -1,6 +1,6 @@
 # Tasks: Platform Foundation & Core System Architecture
 
-**Input**: Design documents from `/specs/00-platform-foundation/`
+**Input**: Design documents from `/specs/001-platform-foundation/`
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/
 **Tests**: Included because the spec requires automated tests and contract validation.
 
@@ -48,7 +48,7 @@
 
 **Independent Test**: Publish a sample event, verify a second consumer receives it, force a failure into DLQ, and replay historical events.
 
-- [x] T014 [P] [US2] Define the event envelope, catalog, and foundation event schemas in `shared/atlas_events/envelope.py`, `shared/atlas_events/catalog.py`, and `specs/00-platform-foundation/contracts/platform-events.md`
+- [x] T014 [P] [US2] Define the event envelope, catalog, and foundation event schemas in `shared/atlas_events/envelope.py`, `shared/atlas_events/catalog.py`, and `specs/001-platform-foundation/contracts/platform-events.md`
 - [x] T015 [P] [US2] Implement the transactional outbox, publisher, subscriber, processed-event ledger, and dead-letter adapters in `shared/atlas_events/`
 - [x] T016 [P] [US2] Implement worker relay, retry, and replay flows in `services/worker/src/atlas_worker/events.py` and `apps/api/src/atlas_api/modules/platform/events.py`
 - [x] T017 [US2] Publish the sample proof event from `apps/api/src/atlas_api/modules/sample/events.py` and wire replay-capable consumption
@@ -92,7 +92,7 @@
 - [x] T028 [P] [US5] Create the local Compose stack and multi-stage Dockerfiles in `infra/docker/compose.yaml`, `infra/docker/compose.dev.yaml`, `infra/docker/Dockerfile.api`, `infra/docker/Dockerfile.web`, `infra/docker/Dockerfile.worker`, and `infra/docker/Dockerfile.scheduler`
 - [x] T029 [P] [US5] Add environment files and daily-use scripts in `infra/docker/.env.example`, `scripts/bootstrap`, `scripts/db`, `scripts/lint-all`, `scripts/dev-reset`, and `scripts/smoke-events`
 - [x] T030 [P] [US5] Scaffold Helm charts and Terraform modules for the deployable units in `infra/k8s/` and `infra/terraform/`
-- [x] T031 [US5] Publish the quickstart, onboarding, and platform runbook docs in `specs/00-platform-foundation/quickstart.md`, `docs/onboarding/local-development.md`, and `docs/runbooks/platform-foundation.md`
+- [x] T031 [US5] Publish the quickstart, onboarding, and platform runbook docs in `specs/001-platform-foundation/quickstart.md`, `docs/onboarding/local-development.md`, and `docs/runbooks/platform-foundation.md`
 - [x] T032 [US5] Add end-to-end local-stack smoke validation in `tests/e2e/test_local_stack.py` and `.github/workflows/ci.yaml`
 
 ---
@@ -117,7 +117,7 @@
 - [x] T037 [P] Add CI pipelines for lint, typecheck, unit/integration/contract, security, build, and Helm validation in `.github/workflows/ci.yaml` and `.github/workflows/security.yaml`
 - [x] T038 [P] Add repository documentation and architecture index in `README.md`, `docs/architecture.md`, and `docs/module-conventions.md`
 - [x] T039 [P] Add security scan and secret-detection configs in `gitleaks.toml`, `.bandit.yml`, and `trivy.yaml`
-- [x] T040 [P] Refresh the quickstart validation evidence and final smoke notes in `specs/00-platform-foundation/quickstart.md` and `docs/runbooks/platform-foundation.md`
+- [x] T040 [P] Refresh the quickstart validation evidence and final smoke notes in `specs/001-platform-foundation/quickstart.md` and `docs/runbooks/platform-foundation.md`
 
 ---
 

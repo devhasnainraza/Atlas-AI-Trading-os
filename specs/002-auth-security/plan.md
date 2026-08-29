@@ -1,7 +1,7 @@
 # Implementation Plan: Authentication, Security & User Management Platform
 
 **Branch**: `002-auth-security` | **Date**: 2026-08-04 | **Spec**: [spec.md](./spec.md)
-**Input**: Feature specification from `/specs/01-auth-security/spec.md`
+**Input**: Feature specification from `/specs/002-auth-security/spec.md`
 
 ## Summary
 

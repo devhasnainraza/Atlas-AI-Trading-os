@@ -1,6 +1,6 @@
 # Tasks: Authentication, Security & User Management Platform
 
-**Input**: Design documents from `/specs/01-auth-security/`
+**Input**: Design documents from `/specs/002-auth-security/`
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/ (all present)
 
 **Tests**: INCLUDED — the constitution mandates test-first for new behavior and plan §23
@@ -206,7 +206,7 @@ grace (spec US5).
 - [ ] T075 [P] ZAP baseline profile for auth routes + nightly CI job in .github/workflows/security-nightly.yml
 - [ ] T076 Terraform: KMS key + alias for vault KEK, GeoLite2 refresh job, OAuth secret entries via ESO in infra/terraform/modules/auth/
 - [ ] T077 Fix SpecKit script/dir mismatch: make check-prerequisites.sh, setup-plan.sh, update-agent-context.sh, create-phr.sh resolve specs dir from branch OR rename specs dirs to match branches (pick one convention) in .specify/scripts/bash/common.sh
-- [ ] T078 Validate quickstart end-to-end on fresh clone (all §2 smoke flows green) and update specs/01-auth-security/quickstart.md discrepancies
+- [ ] T078 Validate quickstart end-to-end on fresh clone (all §2 smoke flows green) and update specs/002-auth-security/quickstart.md discrepancies
 - [ ] T079 Pre-production security review: run /security-review on the full auth diff, triage findings, and record external pentest scope doc in docs/security/pentest-scope.md
 
 ---
