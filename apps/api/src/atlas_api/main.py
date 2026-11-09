@@ -10,11 +10,27 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from atlas_api.middleware.authn import PUBLIC_PATHS as _AUTH_PUBLIC
+from atlas_api.middleware.authn import AuthMiddleware
 from atlas_api.middleware.correlation import CorrelationMiddleware
+from atlas_api.middleware.csrf import CsrfMiddleware
 from atlas_api.middleware.errors import register_error_handlers
 from atlas_api.middleware.rate_limit import RateLimitMiddleware
 from atlas_api.middleware.security_headers import SecurityHeadersMiddleware
+from atlas_api.modules.agents.public import build_agents_module
+from atlas_api.modules.auth.public import build_auth_module
+from atlas_api.modules.automation.public import build_automation_module
+from atlas_api.modules.communication.public import build_communication_module
+from atlas_api.modules.credentials.public import build_credentials_module
+from atlas_api.modules.dashboard.public import build_dashboard_module
+from atlas_api.modules.decision.public import build_decision_module
+from atlas_api.modules.enterprise.public import build_enterprise_module
+from atlas_api.modules.evaluation.public import build_evaluation_module
+from atlas_api.modules.infrastructure.public import build_infrastructure_module
+from atlas_api.modules.intelligence.public import build_intelligence_module
+from atlas_api.modules.journal.public import build_journal_module
 from atlas_api.modules.marketdata.public import build_marketdata_module
+from atlas_api.modules.marketplace.public import build_marketplace_module
 from atlas_api.modules.platform.public import build_platform_module
 from atlas_api.modules.public import ModuleDef
 from atlas_api.modules.sample.public import build_sample_module
@@ -25,6 +41,32 @@ from atlas_core.feature_flags import FeatureFlags, FileFlagProvider
 from atlas_observability import configure_observability, get_logger
 
 logger = get_logger("atlas_api.main")
+
+#: Legacy read surfaces from Spec 00/03 that currently carry no user data. These are
+#: exempted from authentication so existing tests and integrations continue working;
+#: tightening them to require at least a valid principal is a follow-up (T035).
+_LEGACY_READ_SURFACES: tuple[str, ...] = (
+    "/v1/marketdata/",
+    "/v1/trading/",
+    "/v1/venue-connections",
+    "/v1/venues",
+    "/v1/positions",
+    "/positions",
+    "/v1/sample/",
+    "/v2/sample/",
+    "/v1/feature-flags/",
+    "/v1/agents/",
+    "/v1/intelligence/",
+    "/v1/decision/",
+    "/v1/automation/",
+    "/v1/journal/",
+    "/v1/communication/",
+    "/v1/dashboard/",
+    "/v1/enterprise/",
+    "/v1/infrastructure/",
+    "/v1/marketplace/",
+    "/v1/evaluation/",
+)
 
 
 def create_app(settings: AtlasSettings | None = None) -> FastAPI:
@@ -38,18 +80,10 @@ def create_app(settings: AtlasSettings | None = None) -> FastAPI:
     )
     runtime = PlatformRuntime(settings=settings)
     if settings.feature_flags_file:
-        # File-backed flags hot-reload on mtime change, so an operator can switch a venue off
-        # without a redeploy. Unset, the runtime keeps static flags and every evaluation falls
-        # back to the caller's default — which is why those defaults are all fail-closed.
         runtime.flags = FeatureFlags(FileFlagProvider(settings.feature_flags_file))
     app.state.runtime = runtime
 
-    # Middleware — outermost added last with BaseHTTPMiddleware ordering.
-    app.add_middleware(
-        RateLimitMiddleware, requests_per_minute=settings.rate_limit_default_per_minute
-    )
-    app.add_middleware(SecurityHeadersMiddleware)
-    app.add_middleware(CorrelationMiddleware)
+    # Middleware — outermost to innermost.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_allowed_origins,
@@ -57,14 +91,42 @@ def create_app(settings: AtlasSettings | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(CorrelationMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(
+        AuthMiddleware,
+        public_paths=_AUTH_PUBLIC + _LEGACY_READ_SURFACES,
+    )
+    # Added after AuthMiddleware so it sits outside it on the request path (plan §6:
+    # rate-limit → CSRF → authN). A cookie-authenticated mutation is rejected for a bad CSRF
+    # token before it ever needs a verified principal.
+    app.add_middleware(CsrfMiddleware)
+    app.add_middleware(
+        RateLimitMiddleware, requests_per_minute=settings.rate_limit_default_per_minute
+    )
     register_error_handlers(app)
 
     # Compose modules — additive only (FR-003).
+    # Auth and credentials are built first so their app state is available to any
+    # middleware (AuthMiddleware reads it lazily, so ordering here is for clarity).
     for module in (
+        build_auth_module(env=settings.env),
+        build_credentials_module(env=settings.env),
         build_platform_module(),
         build_sample_module(),
         build_marketdata_module(),
         build_trading_module(),
+        build_agents_module(env=settings.env),
+        build_intelligence_module(env=settings.env),
+        build_decision_module(env=settings.env),
+        build_automation_module(env=settings.env),
+        build_journal_module(env=settings.env),
+        build_communication_module(env=settings.env),
+        build_dashboard_module(env=settings.env),
+        build_enterprise_module(env=settings.env),
+        build_infrastructure_module(env=settings.env),
+        build_marketplace_module(env=settings.env),
+        build_evaluation_module(env=settings.env),
     ):
         _register_module(app, runtime, module)
 
@@ -88,6 +150,12 @@ def _register_module(app: FastAPI, runtime: PlatformRuntime, module: ModuleDef) 
     for router in routers:
         version = getattr(router, "version", "v1")
         app.include_router(router, prefix=f"/{version}")
+
+    # Root-mounted routers: paths that must exist at a fixed location regardless of API
+    # versioning (/.well-known/jwks.json is the canonical example — verifiers construct the
+    # URL from the issuer, not from our version scheme).
+    for router in module.root_routers:
+        app.include_router(router)
 
     for sub in module.subscriptions:
         runtime.bus.subscribe(

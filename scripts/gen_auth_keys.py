@@ -1,0 +1,152 @@
+"""Generate local auth key material (T006). Development only.
+
+Deployed environments get their signing key and HMAC keys from the secret manager and their
+vault KEK from KMS; ``AuthSettings.validate_for_environment`` refuses to start without them.
+This script exists so a developer's first ``./scripts/bootstrap`` produces a working local
+stack without hand-crafting an EC keypair.
+
+Two properties matter:
+
+* **Idempotent.** Existing files and existing non-placeholder ``.env`` values are left alone.
+  Regenerating the signing key would invalidate every session; regenerating the vault KEK would
+  make every stored credential permanently undecryptable. Running bootstrap twice must be safe.
+* **Never prints a secret.** It reports *which* values it wrote, never the values. A terminal
+  scrollback and a CI log are both places a key should not be.
+"""
+
+from __future__ import annotations
+
+import base64
+import os
+import secrets
+from pathlib import Path
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+
+from atlas_api.modules.auth.service.tokens import key_id
+
+REPO = Path(__file__).resolve().parent.parent
+SECRET_DIR = REPO / ".secrets" / "auth"
+JWKS_DIR = SECRET_DIR / "jwks"
+PRIVATE_KEY_PATH = SECRET_DIR / "jwt-signing-key.pem"
+ENV_PATH = REPO / ".env"
+
+#: Value in .env.example that marks "not yet generated". Replaced on first run.
+PLACEHOLDER = "replace-me-local-only"
+
+#: Generated keys, and how many random bytes each needs.
+GENERATED_KEYS = {
+    "AUTH_EMAIL_HASH_KEY": 32,
+    "AUTH_DEVICE_COOKIE_KEY": 32,
+    # The vault KEK must be exactly 32 bytes — AES-256 key-wrapping, not a passphrase.
+    "VAULT_KEK_LOCAL": 32,
+}
+
+
+def _restrict(path: Path) -> None:
+    """Owner-read/write only. A no-op on Windows, correct everywhere else."""
+    try:
+        os.chmod(path, 0o600)
+    except OSError:  # pragma: no cover - filesystem does not support it
+        pass
+
+
+def generate_signing_key() -> str:
+    """Create the ES256 keypair if absent. Returns a human-readable status line."""
+    JWKS_DIR.mkdir(parents=True, exist_ok=True)
+
+    if PRIVATE_KEY_PATH.exists():
+        private_key = serialization.load_pem_private_key(
+            PRIVATE_KEY_PATH.read_bytes(), password=None
+        )
+        if not isinstance(private_key, ec.EllipticCurvePrivateKey):  # pragma: no cover
+            raise SystemExit(
+                f"FATAL: {PRIVATE_KEY_PATH} is not an EC private key — delete it and re-run"
+            )
+        kid = key_id(private_key.public_key())
+        status = f"kept existing signing key (kid={kid})"
+    else:
+        private_key = ec.generate_private_key(ec.SECP256R1())
+        PRIVATE_KEY_PATH.write_bytes(
+            private_key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption(),
+            )
+        )
+        _restrict(PRIVATE_KEY_PATH)
+        kid = key_id(private_key.public_key())
+        status = f"generated ES256 signing key (kid={kid})"
+
+    # The public half is written every time: it is derived, not secret, and a missing entry
+    # here is a 404 on /.well-known/jwks.json — the confusing failure the quickstart calls out.
+    public_path = JWKS_DIR / f"{kid}.pem"
+    public_path.write_bytes(
+        private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+    )
+    return status
+
+
+def fill_env_secrets() -> list[str]:
+    """Replace placeholder values in ``.env`` with real random keys.
+
+    Returns the names of the variables written. Values are never returned or logged.
+    """
+    if not ENV_PATH.exists():
+        return []
+
+    lines = ENV_PATH.read_text(encoding="utf-8").splitlines(keepends=True)
+    written: list[str] = []
+    seen: set[str] = set()
+
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        name, _, value = stripped.partition("=")
+        name = name.strip()
+        if name not in GENERATED_KEYS:
+            continue
+        seen.add(name)
+        value = value.strip()
+        if value and value != PLACEHOLDER:
+            continue  # already set by the developer or a previous run — leave it
+        secret = base64.b64encode(secrets.token_bytes(GENERATED_KEYS[name])).decode()
+        newline = "\n" if line.endswith("\n") else ""
+        lines[index] = f"{name}={secret}{newline}"
+        written.append(name)
+
+    missing = [name for name in GENERATED_KEYS if name not in seen]
+    if missing:
+        # The variable is absent from .env entirely — probably an older copy of the template.
+        lines.append("\n# Generated by scripts/gen_auth_keys.py (local development only)\n")
+        for name in missing:
+            secret = base64.b64encode(secrets.token_bytes(GENERATED_KEYS[name])).decode()
+            lines.append(f"{name}={secret}\n")
+            written.append(name)
+
+    if written:
+        ENV_PATH.write_text("".join(lines), encoding="utf-8")
+        _restrict(ENV_PATH)
+    return written
+
+
+def main() -> None:
+    print(f"    {generate_signing_key()}")
+    print(f"    JWKS directory: {JWKS_DIR.relative_to(REPO)}")
+
+    written = fill_env_secrets()
+    if not ENV_PATH.exists():
+        print("    WARNING: no .env found — run bootstrap first, then re-run this script")
+    elif written:
+        print(f"    wrote local keys into .env: {', '.join(sorted(written))}")
+    else:
+        print("    .env already has local keys — left untouched")
+
+
+if __name__ == "__main__":
+    main()

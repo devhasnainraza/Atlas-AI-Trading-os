@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+# Auth flow smoke tests (T006):
+#   ./scripts/auth-smoke {register|login|mfa|lockout|vault|privacy|all}
+#
+# Exercises the Spec 01 flows against a running local stack, the way a person would:
+# real HTTP, real cookies, real Mailpit. It is a companion to the test suite, not a
+# replacement — pytest proves correctness, this proves the stack is wired together.
+#
+# The plumbing below (cookie jar, step/expect helpers, Mailpit link extraction) is
+# complete. Individual flows fill in as their tasks land; each prints the task that
+# implements it rather than silently passing.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+API="${ATLAS_API_URL:-http://localhost:8000/v1}"
+MAILPIT="${MAILPIT_URL:-http://localhost:8025}"
+JAR="$(mktemp -t atlas-smoke-cookies.XXXXXX)"
+trap 'rm -f "$JAR"' EXIT
+
+# A unique address per run: these flows create real accounts, and reusing one would
+# make the second run fail on "already registered" instead of on a real defect.
+RUN_ID="$(date +%s)"
+EMAIL="${AUTH_SMOKE_EMAIL:-smoke+${RUN_ID}@atlas.local}"
+PASSWORD="${AUTH_SMOKE_PASSWORD:-Sm0ke-Test-$RUN_ID!}"
+
+step()   { printf '\n\033[1m▸ %s\033[0m\n' "$*"; }
+ok()     { printf '  \033[32m✓\033[0m %s\n' "$*"; }
+fail()   { printf '  \033[31m✗\033[0m %s\n' "$*" >&2; exit 1; }
+pending() {
+  printf '  \033[33m…\033[0m not implemented yet — lands with %s\n' "$*"
+  exit 0
+}
+
+require() {
+  command -v "$1" >/dev/null || fail "$1 is required"
+}
+
+# api <METHOD> <PATH> [json-body] → prints "<status>\n<body>"
+api() {
+  local method="$1" path="$2" body="${3:-}"
+  local args=(-sS -o /dev/null -w '%{http_code}' -X "$method"
+              -b "$JAR" -c "$JAR" -H 'Accept: application/json')
+  if [ -n "$body" ]; then
+    args+=(-H 'Content-Type: application/json' -d "$body")
+  fi
+  curl "${args[@]}" "$API$path"
+}
+
+# expect_status <expected> <METHOD> <PATH> [body] <description>
+expect_status() {
+  local expected="$1" method="$2" path="$3" body="$4" description="$5"
+  local actual
+  actual="$(api "$method" "$path" "$body")"
+  [ "$actual" = "$expected" ] || fail "$description — expected $expected, got $actual"
+  ok "$description ($actual)"
+}
+
+# JSON extractors kept in variables rather than inlined: a python one-liner carrying double
+# quotes inside "$( ... )" is a quoting minefield, and this script is read more than it is run.
+PY_FIRST_MESSAGE_ID='import json, sys
+messages = json.load(sys.stdin).get("messages") or []
+print(messages[0]["ID"] if messages else "")'
+
+PY_MESSAGE_BODY='import json, sys
+message = json.load(sys.stdin)
+print(message.get("Text") or message.get("HTML") or "")'
+
+# Newest Mailpit message body for an address. Verification and reset links are only
+# ever delivered by email, so the smoke test reads them the same way a user does.
+latest_email_body() {
+  local address="$1" id search="$MAILPIT/api/v1/search?query=to:$address&limit=1"
+  id="$(curl -sS "$search" | python -c "$PY_FIRST_MESSAGE_ID")"
+  if [ -z "$id" ]; then
+    fail "no email for $address in Mailpit — is the worker running?"
+  fi
+  curl -sS "$MAILPIT/api/v1/message/$id" | python -c "$PY_MESSAGE_BODY"
+}
+
+# First URL in the newest email containing the given path fragment.
+email_link() {
+  latest_email_body "$1" |
+    grep -oE 'https?://[^ "<>]+' |
+    grep -m1 -- "$2" || fail "no link containing '$2' in the latest email"
+}
+
+preflight() {
+  require curl
+  require python
+  curl -sSf "$API/health" >/dev/null 2>&1 ||
+    fail "API not reachable at $API — start it with: uv run uvicorn atlas_api.main:create_app --factory --reload"
+}
+
+flow_register() {
+  step "Register + verify ($EMAIL)"
+  pending "T025/T029 (RegistrationService + auth routers)"
+}
+
+flow_login() {
+  step "Login + refresh rotation + reuse detection"
+  pending "T026/T029 (SessionService + auth routers)"
+}
+
+flow_mfa() {
+  step "TOTP enrollment, activation, recovery codes, step-up"
+  pending "T039/T041 (MfaService + MFA routers)"
+}
+
+flow_lockout() {
+  step "Brute-force backoff and account lockout"
+  pending "T040 (LockoutService)"
+}
+
+flow_vault() {
+  step "Credential store → mask → rotate → revoke"
+  pending "T048/T051 (VaultService + credential routers)"
+}
+
+flow_privacy() {
+  step "Data export and deletion grace period"
+  pending "T069 (PrivacyService + privacy jobs)"
+}
+
+cmd="${1:-help}"
+case "$cmd" in
+  register) preflight; flow_register ;;
+  login)    preflight; flow_login ;;
+  mfa)      preflight; flow_mfa ;;
+  lockout)  preflight; flow_lockout ;;
+  vault)    preflight; flow_vault ;;
+  privacy)  preflight; flow_privacy ;;
+  all)
+    preflight
+    flow_register; flow_login; flow_mfa; flow_lockout; flow_vault; flow_privacy
+    ;;
+  *)
+    echo "Usage: ./scripts/auth-smoke {register|login|mfa|lockout|vault|privacy|all}"
+    echo
+    echo "Environment:"
+    echo "  ATLAS_API_URL         default http://localhost:8000/v1"
+    echo "  MAILPIT_URL           default http://localhost:8025"
+    echo "  AUTH_SMOKE_EMAIL      default smoke+<timestamp>@atlas.local"
+    echo "  AUTH_SMOKE_PASSWORD   default generated per run"
+    ;;
+esac

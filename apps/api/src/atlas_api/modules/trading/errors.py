@@ -225,10 +225,18 @@ class RiskInputsUnavailableError(AtlasError):
     )
 
 
-#: Every code this module owns, for the taxonomy contract test.
+class StepUpMfaRequiredError(AtlasError):
+    """ATLAS-AUTH-MFA-REQUIRED — step-up MFA verification is required for this action."""
+
+    code = "ATLAS-AUTH-MFA-REQUIRED"
+    http_status = 403
+    default_message = "Step-up MFA verification is required to perform this action."
+
+
 TRADING_ERROR_CLASSES: tuple[type[AtlasError], ...] = (
     ConnectionUnavailableError,
     CapabilityNotPermittedError,
+    StepUpMfaRequiredError,
     InstrumentNotTradableError,
     InvalidQuantityError,
     StaleMarketDataError,
@@ -261,6 +269,7 @@ __all__ = [
     "RiskInputsUnavailableError",
     "RiskLimitBreachedError",
     "StaleMarketDataError",
+    "StepUpMfaRequiredError",
     "VenueRateLimitedError",
     "VenueRejectedError",
 ]

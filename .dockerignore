@@ -1,0 +1,55 @@
+# Build context exclusions. Keep images small and keep secrets out of layers —
+# a .env copied into a layer stays in that layer even if a later step deletes it.
+
+# VCS & tooling
+.git/
+.github/
+.specify/
+.claude/
+history/
+specs/
+docs/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+
+# Node / TypeScript
+node_modules/
+.next/
+out/
+.turbo/
+coverage/
+*.tsbuildinfo
+
+# Secrets — never in a build context
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p8
+.secrets/
+
+# Local artifacts
+*.log
+volumes/
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.idea/
+.vscode/
+
+# Infra that images never need
+infra/terraform/
+infra/k8s/
+tests/

@@ -59,7 +59,14 @@ SECRET_PATTERNS = (
 
 SECRET_ALLOWED = frozenset({"credential_id", "credential_ref"})
 
-TRADING_PREFIXES = ("/v1/trading", "/v1/marketdata")
+TRADING_PREFIXES = (
+    "/v1/trading",
+    "/v1/marketdata",
+    "/v1/venue-connections",
+    "/v1/venues",
+    "/v1/positions",
+    "/positions",
+)
 
 
 def _openapi() -> dict[str, Any]:

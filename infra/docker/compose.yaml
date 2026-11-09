@@ -67,8 +67,50 @@ services:
       timeout: 5s
       retries: 10
 
+  # Local SMTP sink (Spec 01). Every verification, reset, magic-link, and security
+  # alert email lands here and NOTHING leaves the machine — which is the point: a
+  # misconfigured provider key in development must not be able to mail a real
+  # person. Web UI: http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:v1.21
+    ports:
+      - "1025:1025" # SMTP
+      - "8025:8025" # web UI
+    environment:
+      MP_MAX_MESSAGES: 500
+      # Accept anything: local senders are not authenticated, and rejecting them
+      # would turn "email misconfigured" into "auth flow broken".
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    volumes:
+      - mailpit-data:/data
+    healthcheck:
+  # IB Gateway sidecar (Spec 03 US1, T039). Profile-gated and capability-limited.
+  ib-gateway:
+    profiles: ["ibkr"]
+    image: ghcr.io/gnzsnz/ib-gateway:latest
+    ports:
+      - "4002:4002"
+      - "5000:5000"
+    environment:
+      TWS_USERID: "${IBKR_USERID:-edemo}"
+      TWS_PASSWORD: "${IBKR_PASSWORD:-demouser}"
+      TRADING_MODE: "${IBKR_MODE:-paper}"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 4002 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
 volumes:
+
   postgres-data:
   redis-data:
   redpanda-data:
   minio-data:
+  mailpit-data:
+  # MaxMind GeoLite2 City database, refreshed weekly by a scheduled job. Login
+  # geo signals (new country, impossible travel) read it; when the file is absent
+  # those signals are SKIPPED rather than guessed, so an empty volume degrades
+  # detection without breaking sign-in.
+  geoip-data:

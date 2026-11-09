@@ -96,12 +96,117 @@ class PaperResetResponse(BaseModel):
     reset_count: int
 
 
+class CapabilitiesModel(BaseModel):
+    venue_code: str
+    display_name: str
+    asset_classes: list[AssetClass]
+    order_types: list[OrderType]
+    time_in_force: list[TimeInForce]
+    environments: list[VenueEnvironment]
+    supports_amend: bool
+    supports_cancel: bool
+    supports_close_position: bool
+    supports_streaming_quotes: bool
+    supports_streaming_account: bool
+    supports_historical_bars: bool
+    supports_fractional_quantity: bool
+    supports_client_order_id: bool
+    supports_stop_loss_take_profit: bool
+    supports_short_selling: bool
+    notes: str | None = None
+
+
+class CreateVenueConnectionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    venue_code: str = Field(min_length=1, max_length=32)
+    credential_id: str = Field(min_length=1, max_length=128)
+    environment: VenueEnvironment
+    label: str = Field(min_length=1, max_length=60)
+
+
+class VenueConnectionResponse(BaseModel):
+    id: str
+    venue_code: str
+    label: str
+    environment: VenueEnvironment
+    credential_id: str
+    granted_capabilities: CapabilitiesModel
+    health: str
+    health_reason: str | None = None
+    routing_hold: bool = False
+    last_contact_at: str | None = None
+    created_at: str
+
+
+class VenueConnectionListResponse(BaseModel):
+    items: list[VenueConnectionResponse]
+
+
+class VerifyVenueConnectionResponse(BaseModel):
+    health: str
+    health_reason: str | None = None
+    granted_capabilities: CapabilitiesModel
+    verified_at: str
+
+
+class VenueAccountResponse(BaseModel):
+    id: str
+    connection_id: str
+    venue_account_ref: str
+    environment: VenueEnvironment
+    base_currency: str
+    balance: Decimal
+    equity: Decimal
+    margin_used: Decimal | None = None
+    margin_available: Decimal | None = None
+    unrealized_pnl: Decimal | None = None
+    leverage: Decimal | None = None
+    view_state: str
+    synced_at: str | None = None
+
+
+class VenueAccountListResponse(BaseModel):
+    items: list[VenueAccountResponse]
+
+
+class PositionResponse(BaseModel):
+    connection_id: str
+    venue_symbol: str
+    side: str
+    quantity: Decimal
+    average_entry_price: Decimal
+    environment: str
+    venue_position_ref: str | None = None
+    unrealized_pnl: Decimal | None = None
+    current_price: Decimal | None = None
+    stop_loss: Decimal | None = None
+    take_profit: Decimal | None = None
+    opened_externally: bool = False
+    state: str = "open"
+    synced_at: str | None = None
+
+
+class PositionListResponse(BaseModel):
+    items: list[PositionResponse]
+
+
 __all__ = [
+    "CapabilitiesModel",
+    "CreateVenueConnectionRequest",
     "LiveTradingStatusResponse",
     "PaperResetRequest",
     "PaperResetResponse",
+    "PositionListResponse",
+    "PositionResponse",
     "RiskRuleDescriptor",
     "RiskRulesResponse",
+    "VenueAccountListResponse",
+    "VenueAccountResponse",
     "VenueCapabilitiesResponse",
+    "VenueConnectionListResponse",
+    "VenueConnectionResponse",
     "VenueListResponse",
+    "VerifyVenueConnectionResponse",
 ]
+

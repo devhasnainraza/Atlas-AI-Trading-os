@@ -86,26 +86,27 @@ guard tests green — story work can begin.
 
 ### Tests for User Story 1 ⚠️ write first, must fail
 
-- [ ] T029 [P] [US1] Conformance test group `discovery`: `capabilities()`, `verify_permissions()`, `instruments()` behavior contract in `tests/conformance/venues/test_discovery.py`
-- [ ] T030 [P] [US1] Integration test: create connection → verified capabilities stored as declared ∧ granted; read-only key ⇒ trading capability absent (FR-005)
-- [ ] T031 [P] [US1] Integration test: bad/expired credential ⇒ `health: failed` with sanitized reason, no secret in response or log (FR-004, FR-008)
-- [ ] T032 [P] [US1] Integration test: credential revoked event ⇒ connection `quarantined`, routing stops, reconciliation triggered
-- [ ] T033 [P] [US1] Contract test: `/venue-connections` operations vs `contracts/trading-api.openapi.yaml`
+- [x] T029 [P] [US1] Conformance test group `discovery`: `capabilities()`, `verify_permissions()`, `instruments()` behavior contract in `tests/conformance/venues/test_discovery.py`
+- [x] T030 [P] [US1] Integration test: create connection → verified capabilities stored as declared ∧ granted; read-only key ⇒ trading capability absent (FR-005)
+- [x] T031 [P] [US1] Integration test: bad/expired credential ⇒ `health: failed` with sanitized reason, no secret in response or log (FR-004, FR-008)
+- [x] T032 [P] [US1] Integration test: credential revoked event ⇒ connection `quarantined`, routing stops, reconciliation triggered
+- [x] T033 [P] [US1] Contract test: `/venue-connections` operations vs `contracts/trading-api.openapi.yaml`
 
 ### Implementation for User Story 1
 
-- [ ] T034 [P] [US1] Paper adapter skeleton in `venues/adapters/paper/` implementing discovery + account operations (execution lands in US6)
-- [ ] T035 [P] [US1] OANDA adapter discovery + account (`venues/adapters/oanda/`), v20 REST via httpx with timeout/retry classification
-- [ ] T036 [P] [US1] Binance adapter discovery + account (`venues/adapters/binance/`) with weight-aware limits and server-time offset
-- [ ] T037 [P] [US1] Bybit adapter discovery + account (`venues/adapters/bybit/`)
-- [ ] T038 [US1] MT5 bridge sidecar (`services/mt5-bridge/`): narrow internal RPC, no persistent secrets, health endpoint; adapter `venues/adapters/mt5/` calling it
-- [ ] T039 [US1] IBKR adapter (`venues/adapters/ibkr/`) + IB Gateway sidecar compose profile; marked capability-limited
-- [ ] T040 [US1] `trading/repository/connections.py` + `domain/connections.py`: create, verify, capability intersection, health transitions
-- [ ] T041 [US1] `trading/service.py` connection operations + `POST /venue-connections`, `GET`, `GET /{id}`, `DELETE`, `POST /{id}/verify` in `router.py`
-- [ ] T042 [US1] Health probe scheduler job (`services/scheduler`) per venue cadence; emits `venue.degraded` / `venue.verified`
-- [ ] T043 [US1] Consumer for `atlas.credentials.credential.revoked` / `.rotated` → quarantine / re-verify, idempotent via the event ledger
-- [ ] T044 [P] [US1] Web: `/settings/venues` — connection list with health badges, add-connection flow (credential picker from Spec 01, environment choice, step-up MFA for live), sanitized error display
-- [ ] T045 [P] [US1] Audit entries for `trading.connection.created/verified/degraded/quarantined/disconnected`
+- [x] T034 [P] [US1] Paper adapter skeleton in `venues/adapters/paper/` implementing discovery + account operations (execution lands in US6)
+- [x] T035 [P] [US1] OANDA adapter discovery + account (`venues/adapters/oanda/`), v20 REST via httpx with timeout/retry classification
+- [x] T036 [P] [US1] Binance adapter discovery + account (`venues/adapters/binance/`) with weight-aware limits and server-time offset
+- [x] T037 [P] [US1] Bybit adapter discovery + account (`venues/adapters/bybit/`)
+- [x] T038 [US1] MT5 bridge sidecar (`services/mt5-bridge/`): narrow internal RPC, no persistent secrets, health endpoint; adapter `venues/adapters/mt5/` calling it
+- [x] T039 [US1] IBKR adapter (`venues/adapters/ibkr/`) + IB Gateway sidecar compose profile; marked capability-limited
+- [x] T040 [US1] `trading/repository/connections.py` + `domain/connections.py`: create, verify, capability intersection, health transitions
+- [x] T041 [US1] `trading/service.py` connection operations + `POST /venue-connections`, `GET`, `GET /{id}`, `DELETE`, `POST /{id}/verify` in `router.py`
+- [x] T042 [US1] Health probe scheduler job (`services/scheduler`) per venue cadence; emits `venue.degraded` / `venue.verified`
+- [x] T043 [US1] Consumer for `atlas.credentials.credential.revoked` / `.rotated` → quarantine / re-verify, idempotent via the event ledger
+- [x] T044 [P] [US1] Web: `/settings/venues` — connection list with health badges, add-connection flow (credential picker from Spec 01, environment choice, step-up MFA for live), sanitized error display
+- [x] T045 [P] [US1] Audit entries for `trading.connection.created/verified/degraded/quarantined/disconnected`
+
 
 **Checkpoint**: users can connect venues, see verified capabilities and honest health; nothing trades yet.
 
@@ -118,22 +119,23 @@ guard tests green — story work can begin.
 
 ### Tests for User Story 2 ⚠️ write first, must fail
 
-- [ ] T046 [P] [US2] Conformance test group `data`: `quote()`, `bars()`, `stream_quotes()` including reconnect and gap reporting
-- [ ] T047 [P] [US2] Unit test: TTL-as-staleness — expired key ⇒ `freshness: stale`, `age_seconds` reported, Redis down ⇒ stale (fail-safe)
-- [ ] T048 [P] [US2] Integration test: bar backfill marks gaps (`is_gap`) and never interpolates (FR-014)
-- [ ] T049 [P] [US2] Integration test: quotes from two venues for one symbol stay separately attributed (FR-015)
-- [ ] T050 [P] [US2] Load test (k6): 1,000 subscribers, observation → client p95 < 1s (SC-002)
+- [x] T046 [P] [US2] Conformance test group `data`: `quote()`, `bars()`, `stream_quotes()` including reconnect and gap reporting
+
+- [x] T047 [P] [US2] Unit test: TTL-as-staleness — expired key ⇒ `freshness: stale`, `age_seconds` reported, Redis down ⇒ stale (fail-safe)
+- [x] T048 [P] [US2] Integration test: bar backfill marks gaps (`is_gap`) and never interpolates (FR-014)
+- [x] T049 [P] [US2] Integration test: quotes from two venues for one symbol stay separately attributed (FR-015)
+- [x] T050 [P] [US2] Load test (k6): 1,000 subscribers, observation → client p95 < 1s (SC-002)
 
 ### Implementation for User Story 2
 
-- [ ] T051 [US2] Instrument normalization service: canonical ↔ venue symbol mapping, spec refresh job, `spec_version` bump + `instrument.spec_changed` event (`marketdata/domain/instruments.py`)
-- [ ] T052 [US2] Redis quote store with freshness-limit TTL and `observed_at` (`marketdata/repository/quotes.py`)
-- [ ] T053 [US2] Stream owner worker with Redis lease per (connection, symbol group), reconnect backoff, gap detection → `feed.degraded` / `feed.recovered`
-- [ ] T054 [US2] Bar aggregation + gap-marked backfill job (low priority in the rate limiter), monthly partition writes
-- [ ] T055 [US2] `marketdata/service.py` + `router.py`: `/market-data/quotes`, `/candles`, `/subscriptions` (CRUD, per-user cap), `/stream` (SSE via Redis pub/sub)
-- [ ] T056 [US2] `marketdata/public.py` exposing `get_quote`, `get_quotes`, `is_fresh` for the trading module (no cross-module table access)
-- [ ] T057 [P] [US2] Web: watchlist + chart on `/trading`, SSE hook with reconnect, explicit stale badge and age, session-state indicator
-- [ ] T058 [P] [US2] Metrics + dashboard: quote lag histogram, stale-quote counter, stream reconnect rate, feed-degraded gauge
+- [x] T051 [US2] Instrument normalization service: canonical ↔ venue symbol mapping, spec refresh job, `spec_version` bump + `instrument.spec_changed` event (`marketdata/domain/instruments.py`)
+- [x] T052 [US2] Redis quote store with freshness-limit TTL and `observed_at` (`marketdata/repository/quotes.py`)
+- [x] T053 [US2] Stream owner worker with Redis lease per (connection, symbol group), reconnect backoff, gap detection → `feed.degraded` / `feed.recovered`
+- [x] T054 [US2] Bar aggregation + gap-marked backfill job (low priority in the rate limiter), monthly partition writes
+- [x] T055 [US2] `marketdata/service.py` + `router.py`: `/market-data/quotes`, `/candles`, `/subscriptions` (CRUD, per-user cap), `/stream` (SSE via Redis pub/sub)
+- [x] T056 [US2] `marketdata/public.py` exposing `get_quote`, `get_quotes`, `is_fresh` for the trading module (no cross-module table access)
+- [x] T057 [P] [US2] Web: watchlist + chart on `/trading`, SSE hook with reconnect, explicit stale badge and age, session-state indicator
+- [x] T058 [P] [US2] Metrics + dashboard: quote lag histogram, stale-quote counter, stream reconnect rate, feed-degraded gauge
 
 **Checkpoint**: US1 + US2 deliver a trustworthy read-only market view.
 
@@ -146,20 +148,20 @@ guard tests green — story work can begin.
 
 ### Tests for User Story 3 ⚠️ write first, must fail
 
-- [ ] T059 [P] [US3] Conformance test group `account`: `account_snapshot()`, `positions()`, `open_orders()`, `stream_account()`
-- [ ] T060 [P] [US3] Integration test: externally opened position imported with `opened_externally: true` and included in exposure math (FR-017)
-- [ ] T061 [P] [US3] Integration test: sync failure ⇒ `view_state: stale` with age; never-synced ⇒ `unknown` (FR-019)
-- [ ] T062 [P] [US3] Integration test: out-of-order account updates never overwrite newer state
+- [x] T059 [P] [US3] Conformance test group `account`: `account_snapshot()`, `positions()`, `open_orders()`, `stream_account()`
+- [x] T060 [P] [US3] Integration test: externally opened position imported with `opened_externally: true` and included in exposure math (FR-017)
+- [x] T061 [P] [US3] Integration test: sync failure ⇒ `view_state: stale` with age; never-synced ⇒ `unknown` (FR-019)
+- [x] T062 [P] [US3] Integration test: out-of-order account updates never overwrite newer state
 
 ### Implementation for User Story 3
 
-- [ ] T063 [US3] Account snapshot service + `view_state` derivation (`trading/domain/accounts.py`)
-- [ ] T064 [US3] Position projection from venue state (`trading/domain/positions.py`), netting vs hedging keying
-- [ ] T065 [US3] Streaming account consumer per adapter (Binance/Bybit user data, OANDA transactions, IBKR) with polling fallback for MT5
-- [ ] T066 [US3] Scheduled sync job + snapshot reconcile on reconnect; emits `account.synced`, `position.opened/updated/closed`
-- [ ] T067 [US3] Endpoints: `GET /venue-connections/{id}/accounts` (with `refresh`), `GET /positions`
-- [ ] T068 [P] [US3] Web: `/trading/positions` with freshness badge, external-origin marker, per-connection grouping
-- [ ] T069 [P] [US3] Metrics: sync age per connection, stale-view gauge, external-position discovery counter
+- [x] T063 [US3] Account snapshot service + `view_state` derivation (`trading/domain/accounts.py`)
+- [x] T064 [US3] Position projection from venue state (`trading/domain/positions.py`), netting vs hedging keying
+- [x] T065 [US3] Streaming account consumer per adapter (Binance/Bybit user data, OANDA transactions, IBKR) with polling fallback for MT5
+- [x] T066 [US3] Scheduled sync job + snapshot reconcile on reconnect; emits `account.synced`, `position.opened/updated/closed`
+- [x] T067 [US3] Endpoints: `GET /venue-connections/{id}/accounts` (with `refresh`), `GET /positions`
+- [x] T068 [P] [US3] Web: `/trading/positions` with freshness badge, external-origin marker, per-connection grouping
+- [x] T069 [P] [US3] Metrics: sync age per connection, stale-view gauge, external-position discovery counter
 
 **Checkpoint**: account state is venue-truthful and honestly labelled — the precondition for risk math.
 

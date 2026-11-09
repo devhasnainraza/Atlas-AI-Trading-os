@@ -32,6 +32,9 @@ class ModuleDef:
     owner: str
     router: APIRouter | None = None
     routers_extra: tuple[APIRouter, ...] = ()
+    #: Routers mounted at the application root (no version prefix). Used for paths that
+    #: MUST appear at a well-known location, such as ``/.well-known/jwks.json``.
+    root_routers: tuple[APIRouter, ...] = ()
     subscriptions: tuple[EventSubscriptionDef, ...] = ()
     health_probes: dict[str, Callable[[], Awaitable[bool]]] = field(default_factory=dict)
     #: Module-owned objects to attach to ``app.state``, so per-app state lives on the app

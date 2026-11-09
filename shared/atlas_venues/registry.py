@@ -83,6 +83,8 @@ class VenueRegistry:
             )
         return factory(context)
 
+    build_adapter = create
+
     def capabilities(self, venue_code: str) -> Capabilities:
         code = venue_code.lower()
         try:

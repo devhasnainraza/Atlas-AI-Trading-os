@@ -24,6 +24,11 @@ coverage/
 !.env.example
 *.pem
 *.key
+*.p8
+# Locally generated auth key material (ES256 signing key, JWKS, Apple key).
+# Belt and braces: the extensions above already cover the files, this covers
+# anything a future script drops in here.
+.secrets/
 
 # Local data & artifacts
 *.log
@@ -33,6 +38,12 @@ Thumbs.db
 *.swp
 .idea/
 .vscode/
+*.db
+*.db-shm
+*.db-wal
+.vault_key
+data/
+apps/web/data/
 
 # Terraform
 .terraform/

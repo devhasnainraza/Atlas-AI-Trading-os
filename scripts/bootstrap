@@ -19,4 +19,10 @@ if [ ! -f .env ]; then
   cp infra/docker/.env.example .env
 fi
 
+# Local auth key material: ES256 signing keypair + JWKS, and the HMAC/KEK values
+# in .env. Idempotent — an existing key is kept, because regenerating it would
+# invalidate every session and make every stored credential undecryptable.
+echo "==> Generating local auth keys (development only; deployed envs use KMS)"
+uv run python scripts/gen_auth_keys.py
+
 echo "==> Bootstrap complete. Next: docker compose -f infra/docker/compose.yaml up -d"

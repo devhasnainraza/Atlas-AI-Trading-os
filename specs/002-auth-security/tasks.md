@@ -20,12 +20,12 @@ Spec 00 monorepo: backend modules in `apps/api/src/atlas_api/modules/`, shared P
 
 **Purpose**: Scaffolds, dependencies, and config surface for the two new modules
 
-- [ ] T001 Scaffold `auth` module skeleton (public.py, router.py, schemas.py, service/, domain/, repository/, events.py, deps.py, README.md) in apps/api/src/atlas_api/modules/auth/
-- [ ] T002 [P] Scaffold `credentials` module skeleton (same layout) in apps/api/src/atlas_api/modules/credentials/
-- [ ] T003 [P] Add auth dependencies (authlib, argon2-cffi, PyJWT[crypto], pyotp, cryptography, zxcvbn, user-agents, geoip2) to apps/api/pyproject.toml and uv.lock via `uv add`
-- [ ] T004 [P] Add AUTH_* / VAULT_* / OAUTH_* settings sections (fail-fast Pydantic Settings, no defaults for security fields; VAULT_KEK_LOCAL rejected when ENV=production) in shared/atlas_core/config.py and infra/docker/.env.example
-- [ ] T005 [P] Add Mailpit service + GeoLite2 volume to infra/docker/compose.yaml and wire SMTP env for local email catching
-- [ ] T006 [P] Extend scripts/bootstrap to generate local ES256 JWT keypair + cookie-signing keys and write scripts/auth-smoke skeleton in scripts/
+- [X] T001 Scaffold `auth` module skeleton (public.py, router.py, schemas.py, service/, domain/, repository/, events.py, deps.py, README.md) in apps/api/src/atlas_api/modules/auth/
+- [X] T002 [P] Scaffold `credentials` module skeleton (same layout) in apps/api/src/atlas_api/modules/credentials/
+- [X] T003 [P] Add auth dependencies (authlib, argon2-cffi, PyJWT[crypto], pyotp, cryptography, zxcvbn, user-agents, geoip2) to apps/api/pyproject.toml and uv.lock via `uv add`
+- [X] T004 [P] Add AUTH_* / VAULT_* / OAUTH_* settings sections (fail-fast Pydantic Settings, no defaults for security fields; VAULT_KEK_LOCAL rejected when ENV=production) in shared/atlas_core/config.py and infra/docker/.env.example
+- [X] T005 [P] Add Mailpit service + GeoLite2 volume to infra/docker/compose.yaml and wire SMTP env for local email catching
+- [X] T006 [P] Extend scripts/bootstrap to generate local ES256 JWT keypair + cookie-signing keys and write scripts/auth-smoke skeleton in scripts/
 
 ---
 
@@ -35,18 +35,18 @@ Spec 00 monorepo: backend modules in `apps/api/src/atlas_api/modules/`, shared P
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T007 Initialize Alembic migration branches `auth` and `credentials` (empty baseline revisions) in apps/api/src/atlas_api/modules/auth/migrations/ and apps/api/src/atlas_api/modules/credentials/migrations/
-- [ ] T008 [P] Implement TokenService (ES256 mint/verify, 15-min TTL, claims sub/sid/roles_ver/mfa, kid rotation support) + `/.well-known/jwks.json` route in apps/api/src/atlas_api/modules/auth/service/tokens.py
-- [ ] T009 [P] Implement PasswordHasher (Argon2id 64MiB/t3/p4, versioned params, rehash-on-verify) in apps/api/src/atlas_api/modules/auth/service/hashing.py
-- [ ] T010 [P] Implement vault EnvelopeCrypto (AES-256-GCM per-credential DEK, KekProvider interface with LocalEnvKek + KmsKek stub, AAD binding, crypto-shred) in apps/api/src/atlas_api/modules/credentials/service/crypto.py
-- [ ] T011 [P] Implement one-time token machinery (issue/consume SHA-256-hashed single-use rows, purpose policies 24h/30m/15m) in apps/api/src/atlas_api/modules/auth/service/one_time_tokens.py
-- [ ] T012 Replace DevIdentityProvider seam with real AuthMiddleware (bearer + `__Host-` cookie parsing, JWT verify, sid denylist check for sensitive route class) in apps/api/src/atlas_api/middleware/authn.py
-- [ ] T013 Implement CSRF double-submit middleware for cookie-authenticated mutations in apps/api/src/atlas_api/middleware/csrf.py
-- [ ] T014 [P] Register auth error codes (ATLAS-AUTH-001..008, ATLAS-CRED-001..004) with uniform enumeration-safe messages in shared/atlas_core/errors.py
-- [ ] T015 [P] Register auth rate-limit classes (auth-strict, sensitive, default) and per-account backoff counter helpers (Redis) in shared/atlas_core/ratelimit.py
-- [ ] T016 [P] Define event schemas for atlas.auth.* / atlas.credentials.* / atlas.privacy.* per contracts/auth-events.md in shared/atlas_events/catalog/auth.py
-- [ ] T017 [P] Implement auth email dispatch worker consumer (verification/reset/magic/security-alert templates via Notifier interface, queued with retries) in services/worker/src/consumers/auth_emails.py
-- [ ] T018 [P] Extend audit writer with auth action taxonomy + secret-redaction guard tests in shared/atlas_observability/audit.py
+- [X] T007 Initialize Alembic migration branches `auth` and `credentials` (empty baseline revisions) in apps/api/src/atlas_api/modules/auth/migrations/ and apps/api/src/atlas_api/modules/credentials/migrations/
+- [X] T008 [P] Implement TokenService (ES256 mint/verify, 15-min TTL, claims sub/sid/roles_ver/mfa, kid rotation support) + `/.well-known/jwks.json` route in apps/api/src/atlas_api/modules/auth/service/tokens.py
+- [X] T009 [P] Implement PasswordHasher (Argon2id 64MiB/t3/p4, versioned params, rehash-on-verify) in apps/api/src/atlas_api/modules/auth/service/hashing.py
+- [X] T010 [P] Implement vault EnvelopeCrypto (AES-256-GCM per-credential DEK, KekProvider interface with LocalEnvKek + KmsKek stub, AAD binding, crypto-shred) in apps/api/src/atlas_api/modules/credentials/service/crypto.py
+- [X] T011 [P] Implement one-time token machinery (issue/consume SHA-256-hashed single-use rows, purpose policies 24h/30m/15m) in apps/api/src/atlas_api/modules/auth/service/one_time_tokens.py
+- [X] T012 Replace DevIdentityProvider seam with real AuthMiddleware (bearer + `__Host-` cookie parsing, JWT verify, sid denylist check for sensitive route class) in apps/api/src/atlas_api/middleware/authn.py
+- [X] T013 Implement CSRF double-submit middleware for cookie-authenticated mutations in apps/api/src/atlas_api/middleware/csrf.py
+- [X] T014 [P] Register auth error codes (ATLAS-AUTH-001..008, ATLAS-CRED-001..004) with uniform enumeration-safe messages in shared/atlas_core/errors.py
+- [X] T015 [P] Register auth rate-limit classes (auth-strict, sensitive, default) and per-account backoff counter helpers (Redis) in shared/atlas_core/ratelimit.py
+- [X] T016 [P] Define event schemas for atlas.auth.* / atlas.credentials.* / atlas.privacy.* per contracts/auth-events.md in shared/atlas_events/catalog/auth.py
+- [X] T017 [P] Implement auth email dispatch worker consumer (verification/reset/magic/security-alert templates via Notifier interface, queued with retries) in services/worker/src/consumers/auth_emails.py
+- [X] T018 [P] Extend audit writer with auth action taxonomy + secret-redaction guard tests in shared/atlas_observability/audit.py
 
 **Checkpoint**: Crypto/token/middleware primitives ready — user stories can start
 
@@ -68,10 +68,10 @@ invalid credentials rejected uniformly (spec US1 acceptance scenarios).
 
 ### Implementation for User Story 1
 
-- [ ] T022 [US1] Migration 001: user, user_profile, consent_record, oauth_account, verification_token, session, device tables per data-model.md in apps/api/src/atlas_api/modules/auth/migrations/versions/001_identity_core.py
-- [ ] T023 [P] [US1] Domain entities + status state machine (user, session family, device) in apps/api/src/atlas_api/modules/auth/domain/models.py
-- [ ] T024 [P] [US1] Repositories (UserRepo, SessionRepo, DeviceRepo, OAuthAccountRepo, ConsentRepo) in apps/api/src/atlas_api/modules/auth/repository/
-- [ ] T025 [US1] RegistrationService (create pending user, consent recording, verification issue/consume, resend cooldown, enumeration-safe semantics) in apps/api/src/atlas_api/modules/auth/service/registration.py
+- [X] T022 [US1] Migration 001: user, user_profile, consent_record, oauth_account, verification_token, session, device tables per data-model.md in apps/api/src/atlas_api/modules/auth/migrations/versions/001_identity_core.py
+- [X] T023 [P] [US1] Domain entities + status state machine (user, session family, device) in apps/api/src/atlas_api/modules/auth/domain/models.py
+- [X] T024 [P] [US1] Repositories (UserRepo, SessionRepo, DeviceRepo, OAuthAccountRepo, ConsentRepo) in apps/api/src/atlas_api/modules/auth/repository/
+- [X] T025 [US1] RegistrationService (create pending user, consent recording, verification issue/consume, resend cooldown, enumeration-safe semantics) in apps/api/src/atlas_api/modules/auth/service/registration.py
 - [ ] T026 [US1] SessionService (login, refresh rotation + family revocation, logout/logout-all, device upsert, cookie/bearer response shaping) in apps/api/src/atlas_api/modules/auth/service/sessions.py
 - [ ] T027 [US1] OAuthService (Authlib Google/GitHub/Apple, PKCE+state+nonce, link-confirmation challenge, last-method-unlink guard) in apps/api/src/atlas_api/modules/auth/service/oauth.py
 - [ ] T028 [US1] MagicLinkService (request/consume, 15-min single-use) in apps/api/src/atlas_api/modules/auth/service/magic_link.py

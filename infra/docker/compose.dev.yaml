@@ -12,15 +12,24 @@ services:
       ATLAS_DATABASE_URL: postgresql+asyncpg://atlas:atlas_local_dev@postgres:5432/atlas
       ATLAS_REDIS_URL: redis://redis:6379/0
       ATLAS_KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+      ATLAS_SMTP_HOST: mailpit
+      ATLAS_SMTP_PORT: 1025
+      AUTH_GEOIP_DATABASE_PATH: /geoip/GeoLite2-City.mmdb
     ports:
       - "8000:8000"
     volumes:
       - ../../apps/api/src:/app/apps/api/src
       - ../../shared:/app/shared
+      # Locally generated ES256 signing key + JWKS, read-only. Produced by
+      # ./scripts/bootstrap on the host; never baked into the image (.dockerignore
+      # excludes *.pem, so a key cannot end up in a layer).
+      - ../../.secrets:/app/.secrets:ro
+      - geoip-data:/geoip:ro
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
       redpanda: {condition: service_healthy}
+      mailpit: {condition: service_healthy}
 
   worker:
     build:
@@ -31,12 +40,17 @@ services:
       ATLAS_SERVICE_NAME: atlas-worker
       ATLAS_REDIS_URL: redis://redis:6379/1
       ATLAS_KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+      ATLAS_SMTP_HOST: mailpit
+      ATLAS_SMTP_PORT: 1025
+      AUTH_GEOIP_DATABASE_PATH: /geoip/GeoLite2-City.mmdb
     volumes:
       - ../../services/worker/src:/app/services/worker/src
       - ../../shared:/app/shared
+      - geoip-data:/geoip:ro
     depends_on:
       redis: {condition: service_healthy}
       redpanda: {condition: service_healthy}
+      mailpit: {condition: service_healthy}
 
   scheduler:
     build:

@@ -413,3 +413,356 @@ _MARKETDATA_EVENTS = [
 
 for _definition in (*_TRADING_EVENTS, *_MARKETDATA_EVENTS):
     catalog.register(_definition)
+
+
+# -- Spec 02: auth & security (contracts/auth-events.md) -------------------------------------
+#
+# Payload rule from the contract, enforced by what we mark *required*: user_id + non-secret
+# metadata only. Never tokens, hashes, or secret material. ``login_failed`` carries
+# ``email_hash`` (an HMAC pseudonym) rather than a plaintext address — abuse detection works
+# on stable pseudonyms and a leaked event stream must not be a leaked mailing list.
+# ``required_payload_fields`` stays narrow (the identifiers a consumer cannot act without) so
+# additive payload changes stay non-breaking.
+_AUTH_EVENTS = [
+    EventTypeDef(
+        "atlas.auth.user.registered",
+        "1.0.0",
+        "api",
+        "A user completed registration; verification email is queued",
+        ("user_id", "method", "requires_verification"),
+    ),
+    EventTypeDef(
+        "atlas.auth.user.email_verified",
+        "1.0.0",
+        "api",
+        "A user confirmed their email address",
+        ("user_id",),
+    ),
+    EventTypeDef(
+        "atlas.auth.user.login_succeeded",
+        "1.0.0",
+        "api",
+        "A sign-in completed; feeds travel/device anomaly rules",
+        ("user_id", "method", "device_id", "new_device"),
+    ),
+    EventTypeDef(
+        "atlas.auth.user.login_failed",
+        "1.0.0",
+        "api",
+        "A sign-in was refused; pseudonymized for stuffing-pattern detection",
+        ("email_hash", "ip", "reason_class"),
+    ),
+    EventTypeDef(
+        "atlas.auth.user.locked_out",
+        "1.0.0",
+        "api",
+        "An account hit the failure threshold and is temporarily locked",
+        ("user_id", "until", "trigger"),
+    ),
+    EventTypeDef(
+        "atlas.auth.session.revoked",
+        "1.0.0",
+        "api",
+        "A session (or family, or all) was revoked; realtime forces client logout",
+        ("user_id", "session_id", "scope", "cause"),
+    ),
+    EventTypeDef(
+        "atlas.auth.password.changed",
+        "1.0.0",
+        "api",
+        "A password changed by self-service or reset; user is notified",
+        ("user_id", "via"),
+    ),
+    EventTypeDef(
+        "atlas.auth.password.reset_requested",
+        "1.0.0",
+        "api",
+        "A password reset was requested; reset email is queued",
+        ("user_id",),
+    ),
+    EventTypeDef(
+        "atlas.auth.mfa.enrolled",
+        "1.0.0",
+        "api",
+        "A second factor was enrolled",
+        ("user_id", "factor"),
+    ),
+    EventTypeDef(
+        "atlas.auth.mfa.disabled",
+        "1.0.0",
+        "api",
+        "A second factor was removed — high-signal, always notified",
+        ("user_id",),
+    ),
+    EventTypeDef(
+        "atlas.auth.mfa.recovery_code_used",
+        "1.0.0",
+        "api",
+        "A one-time recovery code was consumed",
+        ("user_id", "remaining"),
+    ),
+    EventTypeDef(
+        "atlas.auth.account.linked",
+        "1.0.0",
+        "api",
+        "An external identity (social/broker) was linked to the account",
+        ("user_id", "provider"),
+    ),
+    EventTypeDef(
+        "atlas.auth.account.unlinked",
+        "1.0.0",
+        "api",
+        "An external identity was unlinked",
+        ("user_id", "provider"),
+    ),
+    EventTypeDef(
+        "atlas.auth.role.assigned",
+        "1.0.0",
+        "api",
+        "A role was granted; role cache must invalidate",
+        ("user_id", "role", "actor"),
+    ),
+    EventTypeDef(
+        "atlas.auth.role.revoked",
+        "1.0.0",
+        "api",
+        "A role was removed; role cache must invalidate",
+        ("user_id", "role", "actor"),
+    ),
+    EventTypeDef(
+        "atlas.auth.security_event.raised",
+        "1.0.0",
+        "worker",
+        "A security signal was raised for alerting / Security Center",
+        ("type", "severity", "event_id"),
+    ),
+    EventTypeDef(
+        "atlas.auth.connected_account.status_changed",
+        "1.0.0",
+        "worker",
+        "A connected account's status changed",
+        ("user_id", "account_id", "old", "new"),
+    ),
+    EventTypeDef(
+        "atlas.credentials.credential.stored",
+        "1.0.0",
+        "api",
+        "A credential was encrypted into the vault",
+        ("user_id", "credential_id", "kind", "provider"),
+    ),
+    EventTypeDef(
+        "atlas.credentials.credential.rotated",
+        "1.0.0",
+        "api",
+        "A credential's secret was rotated to a new version",
+        ("user_id", "credential_id", "version"),
+    ),
+    EventTypeDef(
+        "atlas.credentials.credential.revoked",
+        "1.0.0",
+        "api",
+        "A credential was revoked; consumers must drop handles immediately",
+        ("user_id", "credential_id", "cause"),
+    ),
+    EventTypeDef(
+        "atlas.credentials.credential.retrieved",
+        "1.0.0",
+        "api",
+        "A credential was decrypted for use; feeds access-anomaly detection",
+        ("user_id", "credential_id", "purpose", "caller"),
+    ),
+    EventTypeDef(
+        "atlas.privacy.export.completed",
+        "1.0.0",
+        "worker",
+        "A privacy data export finished; notify with the download link",
+        ("user_id", "request_id"),
+    ),
+    EventTypeDef(
+        "atlas.privacy.user_erasure.requested",
+        "1.0.0",
+        "api",
+        "Right-to-erasure: EVERY PII-holding module must subscribe, erase/pseudonymize, ack",
+        ("user_id", "request_id", "hard_delete_at"),
+    ),
+    EventTypeDef(
+        "atlas.privacy.user_erasure.completed",
+        "1.0.0",
+        "worker",
+        "Erasure finished; carries a tombstone id, never the live user_id",
+        ("user_id_tombstone", "request_id"),
+    ),
+]
+
+for _definition in _AUTH_EVENTS:
+    catalog.register(_definition)
+
+_DECISION_AND_AUTOMATION_EVENTS = [
+    EventTypeDef(
+        "atlas.decision.proposal.created",
+        "1.0.0",
+        "api",
+        "A trade proposal was formulated through dialectic debate and risk review",
+        ("proposal_id", "symbol", "direction", "confidence_score"),
+    ),
+    EventTypeDef(
+        "atlas.decision.proposal.approved",
+        "1.0.0",
+        "api",
+        "A trade proposal was cryptographically signed and authorized by user",
+        ("proposal_id", "user_id"),
+    ),
+    EventTypeDef(
+        "atlas.decision.risk.vetoed",
+        "1.0.0",
+        "api",
+        "A trade proposal was hard vetoed by the constitutional risk gate",
+        ("user_id", "symbol", "reason"),
+    ),
+    EventTypeDef(
+        "atlas.automation.mandate.activated",
+        "1.0.0",
+        "api",
+        "A user authorized an automation mandate for scoped execution",
+        ("mandate_id", "user_id", "mode"),
+    ),
+    EventTypeDef(
+        "atlas.automation.circuit_breaker.tripped",
+        "1.0.0",
+        "api",
+        "A protective circuit breaker tripped and suspended automated execution",
+        ("breaker_type", "user_id", "threshold_value", "observed_value"),
+    ),
+    EventTypeDef(
+        "atlas.automation.position.breakeven_moved",
+        "1.0.0",
+        "api",
+        "Stop loss moved to breakeven after TP1 fill",
+        ("position_id", "new_stop_price"),
+    ),
+]
+
+for _definition in _DECISION_AND_AUTOMATION_EVENTS:
+    catalog.register(_definition)
+
+_JOURNAL_AND_LEARNING_EVENTS = [
+    EventTypeDef(
+        "atlas.journal.entry.created",
+        "1.0.0",
+        "worker",
+        "An automated trade journal entry was recorded upon position close",
+        ("journal_id", "user_id", "symbol", "net_pnl", "r_multiple"),
+    ),
+    EventTypeDef(
+        "atlas.learning.bias.detected",
+        "1.0.0",
+        "api",
+        "A cognitive trading bias (FOMO, revenge trading, overtrading) was detected",
+        ("user_id", "bias_type", "severity", "trade_id"),
+    ),
+    EventTypeDef(
+        "atlas.learning.coaching.published",
+        "1.0.0",
+        "worker",
+        "Weekly AI coaching dossier was generated and delivered to user",
+        ("report_id", "user_id", "profit_factor", "win_rate"),
+    ),
+]
+
+for _definition in _JOURNAL_AND_LEARNING_EVENTS:
+    catalog.register(_definition)
+
+_COMMUNICATION_EVENTS = [
+    EventTypeDef(
+        "atlas.notification.dispatched",
+        "1.0.0",
+        "api",
+        "An outbound notification was dispatched to a destination channel",
+        ("notification_id", "user_id", "channel_type", "priority"),
+    ),
+    EventTypeDef(
+        "atlas.notification.delivered",
+        "1.0.0",
+        "worker",
+        "Third-party provider confirmed receipt of message",
+        ("notification_id", "provider_msg_id"),
+    ),
+    EventTypeDef(
+        "atlas.command.received",
+        "1.0.0",
+        "api",
+        "A bi-directional chat slash command was received from user",
+        ("command", "user_id", "channel_type"),
+    ),
+]
+
+for _definition in _COMMUNICATION_EVENTS:
+    catalog.register(_definition)
+
+_ENTERPRISE_EVENTS = [
+    EventTypeDef(
+        "atlas.enterprise.org.created",
+        "1.0.0",
+        "api",
+        "A new multi-tenant organization was provisioned",
+        ("org_id", "name", "slug", "plan_tier"),
+    ),
+    EventTypeDef(
+        "atlas.enterprise.member.invited",
+        "1.0.0",
+        "api",
+        "A team member was invited to an organization with a specific role",
+        ("org_id", "email", "role"),
+    ),
+    EventTypeDef(
+        "atlas.enterprise.webhook.dispatched",
+        "1.0.0",
+        "worker",
+        "An enterprise event payload was dispatched to institutional webhook",
+        ("org_id", "webhook_id", "event_type"),
+    ),
+    EventTypeDef(
+        "atlas.enterprise.risk.policy_updated",
+        "1.0.0",
+        "api",
+        "Organization-wide risk governance policy or limits were updated",
+        ("org_id", "max_org_daily_drawdown_pct"),
+    ),
+]
+
+for _definition in _ENTERPRISE_EVENTS:
+    catalog.register(_definition)
+
+_MARKETPLACE_EVENTS = [
+    EventTypeDef(
+        "atlas.marketplace.plugin.submitted",
+        "1.0.0",
+        "api",
+        "A creator submitted a new plugin package for marketplace audit",
+        ("plugin_id", "creator_id", "name", "plugin_type"),
+    ),
+    EventTypeDef(
+        "atlas.marketplace.plugin.verified",
+        "1.0.0",
+        "worker",
+        "A plugin passed automated AST security and backtesting verification",
+        ("plugin_id", "version", "status"),
+    ),
+    EventTypeDef(
+        "atlas.marketplace.plugin.installed",
+        "1.0.0",
+        "api",
+        "A user installed and licensed a marketplace plugin",
+        ("installation_id", "user_id", "plugin_id", "target_account_id"),
+    ),
+    EventTypeDef(
+        "atlas.marketplace.plugin.reviewed",
+        "1.0.0",
+        "api",
+        "A verified user posted a review and rating for a plugin",
+        ("review_id", "plugin_id", "user_id", "rating"),
+    ),
+]
+
+for _definition in _MARKETPLACE_EVENTS:
+    catalog.register(_definition)

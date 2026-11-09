@@ -2,38 +2,23 @@
 
 from __future__ import annotations
 
-import os
-import threading
-import time
-import uuid
 from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 from atlas_core.correlation import get_correlation_id
-
-_last_id_lock = threading.Lock()
-_last_id_value = 0
+from atlas_core.ids import uuid7_str
 
 
 def new_event_id() -> str:
-    """UUIDv7-style identifier: 48-bit unix-ms timestamp + random tail, strictly
-    monotonic within this process.
+    """Time-ordered event identifier (UUIDv7).
 
-    Time-ordered IDs keep event stores index-friendly. Random tails alone do not sort
-    within the same millisecond, so a process-local guard bumps the value when needed —
-    the same technique RFC 9562 suggests via counters.
+    Delegates to ``atlas_core.ids`` so event ids and database primary keys share one
+    implementation: two generators drifting apart is the kind of difference nobody notices
+    until an id sorts wrong in a replay.
     """
-    global _last_id_value
-    ts_ms = int(time.time() * 1000) & ((1 << 48) - 1)
-    rand = int.from_bytes(os.urandom(10), "big")
-    value = (ts_ms << 80) | (0x7 << 76) | (rand & ((1 << 76) - 1))
-    with _last_id_lock:
-        if value <= _last_id_value:
-            value = _last_id_value + 1
-        _last_id_value = value
-    return str(uuid.UUID(int=value))
+    return uuid7_str()
 
 
 class EventEnvelope(BaseModel):

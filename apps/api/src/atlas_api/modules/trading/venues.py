@@ -16,9 +16,24 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from atlas_venues.adapters.paper import (
+from atlas_venues.adapters import (
+    BINANCE_CAPABILITIES,
+    BINANCE_VENUE_CODE,
+    BYBIT_CAPABILITIES,
+    BYBIT_VENUE_CODE,
+    IBKR_CAPABILITIES,
+    IBKR_VENUE_CODE,
+    MT5_CAPABILITIES,
+    MT5_VENUE_CODE,
+    OANDA_CAPABILITIES,
+    OANDA_VENUE_CODE,
     PAPER_CAPABILITIES,
     PAPER_VENUE_CODE,
+    BinanceAdapter,
+    BybitAdapter,
+    IbkrAdapter,
+    Mt5Adapter,
+    OandaAdapter,
     PaperAdapter,
     PaperEngine,
     PaperFillModel,
@@ -27,6 +42,7 @@ from atlas_venues.enums import VenueEnvironment
 from atlas_venues.protocol import VenueAdapter
 from atlas_venues.registry import AdapterContext, VenueRegistry
 from atlas_venues.timing import Clock, SystemClock
+
 
 #: Flag key per venue. Absent from the map means "not gated" — which never applies, so a new
 #: venue must add its key here before it can be reached.
@@ -130,7 +146,18 @@ def register_builtin_venues(
 
     if not registry.is_registered(PAPER_VENUE_CODE):
         registry.register(PAPER_VENUE_CODE, make_paper, PAPER_CAPABILITIES)
+    if not registry.is_registered(OANDA_VENUE_CODE):
+        registry.register(OANDA_VENUE_CODE, lambda ctx: OandaAdapter(ctx, clock=clock), OANDA_CAPABILITIES)
+    if not registry.is_registered(BINANCE_VENUE_CODE):
+        registry.register(BINANCE_VENUE_CODE, lambda ctx: BinanceAdapter(ctx, clock=clock), BINANCE_CAPABILITIES)
+    if not registry.is_registered(BYBIT_VENUE_CODE):
+        registry.register(BYBIT_VENUE_CODE, lambda ctx: BybitAdapter(ctx, clock=clock), BYBIT_CAPABILITIES)
+    if not registry.is_registered(MT5_VENUE_CODE):
+        registry.register(MT5_VENUE_CODE, lambda ctx: Mt5Adapter(ctx, clock=clock), MT5_CAPABILITIES)
+    if not registry.is_registered(IBKR_VENUE_CODE):
+        registry.register(IBKR_VENUE_CODE, lambda ctx: IbkrAdapter(ctx, clock=clock), IBKR_CAPABILITIES)
     return registry
+
 
 
 __all__ = [
