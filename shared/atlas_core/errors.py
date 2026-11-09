@@ -26,12 +26,16 @@ class AtlasError(Exception):
         self,
         message: str | None = None,
         *,
+        detail: str | None = None,
         details: list[dict[str, Any]] | None = None,
         internal_context: dict[str, Any] | None = None,
+        **extra: Any,
     ) -> None:
-        self.message = message or self.default_message
+        self.message = message or detail or self.default_message
         self.details = details or []
         self.internal_context = internal_context or {}
+        if extra:
+            self.internal_context.update(extra)
         super().__init__(self.message)
 
     def to_envelope(self, correlation_id: str) -> dict[str, Any]:
@@ -67,6 +71,32 @@ class NotFoundError(AtlasError):
     code = "ATLAS-NF-001"
     http_status = 404
     default_message = "The requested resource was not found."
+
+    def __init__(
+        self,
+        message: str | None = None,
+        *,
+        resource_type: str | None = None,
+        resource_id: str | None = None,
+        detail: str | None = None,
+        **kw: Any,
+    ) -> None:
+        if not message:
+            if detail:
+                message = detail
+            elif resource_type and resource_id:
+                message = f"{resource_type.replace('_', ' ').capitalize()} '{resource_id}' was not found."
+            elif resource_type:
+                message = f"{resource_type.replace('_', ' ').capitalize()} was not found."
+        extra: dict[str, Any] = {}
+        if resource_type:
+            extra["resource_type"] = resource_type
+        if resource_id:
+            extra["resource_id"] = resource_id
+        super().__init__(message, detail=detail, **kw)
+        self.internal_context.update(extra)
+        self.resource_type = resource_type
+        self.resource_id = resource_id
 
 
 class ConflictError(AtlasError):

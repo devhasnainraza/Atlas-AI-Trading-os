@@ -114,9 +114,9 @@ class ModelProviderRouter:
                 provider_names = [alias]
             else:
                 raise NotFoundError(
+                    f"Model alias '{alias}' is not configured in ModelProviderRouter",
                     resource_type="model_alias",
                     resource_id=alias,
-                    detail=f"Model alias '{alias}' is not configured in ModelProviderRouter",
                 )
 
         last_err: Exception | None = None
@@ -137,5 +137,5 @@ class ModelProviderRouter:
                 last_err = err
 
         raise ValidationError(
-            detail=f"All providers for alias '{alias}' failed. Last error: {last_err!s}",
+            f"All providers for alias '{alias}' failed. Last error: {last_err!s}",
         )
