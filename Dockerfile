@@ -22,11 +22,17 @@ COPY shared/ shared/
 COPY apps/api/ apps/api/
 RUN uv sync --frozen --no-dev \
     && groupadd --system atlas \
-    && useradd --system --gid atlas --no-create-home atlas \
-    && chown -R atlas:atlas /app
+    && useradd --system --gid atlas --create-home --home-dir /home/atlas atlas \
+    && chown -R atlas:atlas /app /home/atlas
+
 USER atlas
-ENV PORT=8000
+ENV PORT=8000 \
+    PATH="/app/.venv/bin:$PATH" \
+    HOME="/home/atlas" \
+    UV_CACHE_DIR="/tmp/.uv_cache"
+
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request,sys,os; port=os.getenv('PORT','8000'); sys.exit(0 if urllib.request.urlopen(f'http://localhost:{port}/v1/health/live').status==200 else 1)"
-CMD ["sh", "-c", "uv run --no-dev uvicorn atlas_api.main:create_app --factory --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "uvicorn atlas_api.main:create_app --factory --host 0.0.0.0 --port ${PORT:-8000}"]
+

@@ -14,7 +14,11 @@ RUN uv sync --frozen --no-install-workspace
 COPY shared/ shared/
 COPY services/scheduler/ services/scheduler/
 RUN uv sync --frozen --no-dev \
-    && groupadd --system atlas && useradd --system --gid atlas --no-create-home atlas \
-    && chown -R atlas:atlas /app
+    && groupadd --system atlas \
+    && useradd --system --gid atlas --create-home --home-dir /home/atlas atlas \
+    && chown -R atlas:atlas /app /home/atlas
 USER atlas
-CMD ["uv", "run", "--no-dev", "python", "-m", "atlas_scheduler"]
+ENV PATH="/app/.venv/bin:$PATH" \
+    HOME="/home/atlas" \
+    UV_CACHE_DIR="/tmp/.uv_cache"
+CMD ["python", "-m", "atlas_scheduler"]

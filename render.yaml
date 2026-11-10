@@ -11,3 +11,4 @@ services:
         value: production
       - key: ATLAS_SERVICE_NAME
         value: atlas-api
+
