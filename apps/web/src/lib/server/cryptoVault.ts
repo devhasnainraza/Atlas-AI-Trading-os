@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import path from "node:path";
 import fs from "node:fs";
+import { getDataDir } from "./db";
 
 // Master encryption key management
 function getMasterVaultKey(): Buffer {
@@ -9,21 +10,27 @@ function getMasterVaultKey(): Buffer {
     return crypto.scryptSync(envKey, "atlas-vault-salt", 32);
   }
 
-  // Fallback to local server-only persistent vault secret file
-  const dataDir = path.join(process.cwd(), "data");
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
-
+  // Fallback to server-only persistent vault secret file
+  const dataDir = getDataDir();
   const keyFilePath = path.join(dataDir, ".vault_key");
   if (fs.existsSync(keyFilePath)) {
-    const raw = fs.readFileSync(keyFilePath, "utf8").trim();
-    return Buffer.from(raw, "hex");
+    try {
+      const raw = fs.readFileSync(keyFilePath, "utf8").trim();
+      if (raw.length === 64) {
+        return Buffer.from(raw, "hex");
+      }
+    } catch {
+      // continue to generate
+    }
   }
 
   // Generate high-entropy 256-bit random master key and save with restricted file permissions
   const newKey = crypto.randomBytes(32);
-  fs.writeFileSync(keyFilePath, newKey.toString("hex"), { mode: 0o600 });
+  try {
+    fs.writeFileSync(keyFilePath, newKey.toString("hex"), { mode: 0o600 });
+  } catch {
+    // If filesystem write fails on read-only environments, memory key is still returned safely
+  }
   return newKey;
 }
 

@@ -1,25 +1,73 @@
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import fs from "node:fs";
+import os from "node:os";
 
 let dbInstance: DatabaseSync | null = null;
+
+export function getDataDir(): string {
+  // On Vercel, AWS Lambda, or container environments where process.cwd() is read-only:
+  const isServerless =
+    process.env.VERCEL === "1" ||
+    Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME) ||
+    Boolean(process.env.LAMBDA_TASK_ROOT);
+
+  if (isServerless) {
+    const tmpDir = path.join(os.tmpdir(), "atlas_data");
+    try {
+      if (!fs.existsSync(tmpDir)) {
+        fs.mkdirSync(tmpDir, { recursive: true });
+      }
+      return tmpDir;
+    } catch {
+      return os.tmpdir();
+    }
+  }
+
+  // Local development directory
+  const localDir = path.join(process.cwd(), "data");
+  try {
+    if (!fs.existsSync(localDir)) {
+      fs.mkdirSync(localDir, { recursive: true });
+    }
+    return localDir;
+  } catch {
+    const tmpFallback = path.join(os.tmpdir(), "atlas_data");
+    try {
+      if (!fs.existsSync(tmpFallback)) {
+        fs.mkdirSync(tmpFallback, { recursive: true });
+      }
+      return tmpFallback;
+    } catch {
+      return os.tmpdir();
+    }
+  }
+}
 
 export function getDatabase(): DatabaseSync {
   if (dbInstance) {
     return dbInstance;
   }
 
-  const dataDir = path.join(process.cwd(), "data");
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
-
+  const dataDir = getDataDir();
   const dbPath = path.join(dataDir, "atlas_secure.db");
   const db = new DatabaseSync(dbPath);
 
-  // Enable WAL mode and foreign keys for durability and performance
-  db.exec("PRAGMA journal_mode = WAL;");
-  db.exec("PRAGMA foreign_keys = ON;");
+  // Enable WAL mode and foreign keys safely
+  try {
+    db.exec("PRAGMA journal_mode = WAL;");
+  } catch {
+    try {
+      db.exec("PRAGMA journal_mode = DELETE;");
+    } catch {
+      // ignore
+    }
+  }
+  try {
+    db.exec("PRAGMA foreign_keys = ON;");
+  } catch {
+    // ignore
+  }
 
   // Schema creation
   db.exec(`
