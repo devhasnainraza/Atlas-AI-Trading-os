@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: atlas-api
+    runtime: docker
+    dockerfilePath: Dockerfile
+    plan: starter
+    region: oregon
+    healthCheckPath: /v1/health/live
+    envVars:
+      - key: ATLAS_ENV
+        value: production
+      - key: ATLAS_SERVICE_NAME
+        value: atlas-api
