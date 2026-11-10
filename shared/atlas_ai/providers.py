@@ -129,10 +129,15 @@ class ModelProviderRouter:
                 return result
             except Exception as err:
                 logger.warning(
-                    "provider_failover",
-                    alias=alias,
-                    failed_provider=name,
-                    error=str(err),
+                    "Provider failover for alias '%s' on provider '%s': %s",
+                    alias,
+                    name,
+                    err,
+                    extra={
+                        "alias": alias,
+                        "failed_provider": name,
+                        "error": str(err),
+                    },
                 )
                 last_err = err
 
